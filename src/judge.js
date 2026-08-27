@@ -1,6 +1,6 @@
 import { callGroq } from "./groqClient.js";
 
-export const JUDGE_MODEL = process.env.JUDGE_MODEL || "canopylabs/orpheus-v1-english";
+export const JUDGE_MODEL = process.env.JUDGE_MODEL || "openai/gpt-oss-20b";
 
 const buildJudgePrompt = (input, output, criteria) => `You are a strict, impartial evaluator of LLM outputs.
 
