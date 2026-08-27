@@ -5,6 +5,12 @@ A minimal LLM eval harness. Runs a prompt dataset against a list of
 LLM-as-judge, and logs every run + score to [Langfuse](https://langfuse.com)
 so you get traces, comparisons, and dashboards without building your own UI.
 
+
+![Summary in CLI](docs/demo-1.png)
+
+![Traces on LangFuse](docs/demo-2.png)
+
+
 ## How it works
 
 ```
