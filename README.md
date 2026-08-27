@@ -76,6 +76,25 @@ Then check your Langfuse project's Traces view (filter by trace name prefix
 `eval:`) to inspect individual runs, and the Scores view to compare
 `llm-judge-score` across models.
 
+## Rate limits (Groq free tier)
+
+Groq's free tier is strict — some models allow as few as 10-30 requests per
+minute, and token-per-minute caps as low as ~1.2K-8K depending on the model
+(check current limits at https://console.groq.com/docs/rate-limits or your
+console's Limits page). Since this harness makes one completion call + one
+judge call per dataset item, it's easy to hit a 429 once you scale up models
+or the dataset.
+
+To handle this, `groqClient.js`:
+- Waits at least `GROQ_MIN_REQUEST_INTERVAL_MS` (default 2200ms) between every
+  Groq request, including judge calls.
+- On a 429, retries with exponential backoff (honoring the `Retry-After`
+  header when Groq sends one) up to `GROQ_MAX_RETRIES` times (default 5).
+
+If you're still getting rate limited, either raise
+`GROQ_MIN_REQUEST_INTERVAL_MS` in `.env`, trim `MODELS_UNDER_TEST` /
+`dataset.js`, or move to a paid Groq tier and lower the interval.
+
 ## Notes / next steps
 
 - The judge currently reuses Groq for convenience. Swap `JUDGE_MODEL`, or
