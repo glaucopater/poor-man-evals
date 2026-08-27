@@ -7,7 +7,7 @@ import { LangfuseClient } from "@langfuse/client";
 
 import { callGroq, listGroqModelIds } from "./groqClient.js";
 import { judgeOutput, JUDGE_MODEL } from "./judge.js";
-import { dataset } from "./dataset.js";
+import { dataset } from "./datasets/text.js";
 import { MODELS_UNDER_TEST } from "./models.js";
 
 const langfuse = new LangfuseClient();

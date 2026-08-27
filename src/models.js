@@ -12,6 +12,8 @@ export const MODELS_UNDER_TEST = [
   "openai/gpt-oss-safeguard-20b",
 ];
 
+export const VISION_MODELS = ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b"];
+
 // Not chat-completion models -- included here for reference, but they won't
 // work with callGroq()/this harness as-is since they use different Groq
 // endpoints and input/output shapes:
@@ -21,4 +23,3 @@ export const MODELS_UNDER_TEST = [
 //       speech-to-text, via POST /openai/v1/audio/transcriptions (takes audio input)
 //   - meta-llama/llama-prompt-guard-2-22m, meta-llama/llama-prompt-guard-2-86m
 //       prompt-injection/jailbreak classifiers, not general chat models
-
