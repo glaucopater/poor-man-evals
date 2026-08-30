@@ -1,5 +1,6 @@
 // Each item is a single eval case: a prompt sent to every model under test,
 // plus the criteria the judge model uses to score the response.
+export const id = "text";
 export const dataset = [
   {
     id: "fib-ocaml",

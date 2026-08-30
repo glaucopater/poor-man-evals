@@ -7,10 +7,54 @@ import { LangfuseClient } from "@langfuse/client";
 
 import { callGroq, listGroqModelIds } from "./groqClient.js";
 import { judgeOutput, JUDGE_MODEL } from "./judge.js";
-import { dataset } from "./datasets/text.js";
-import { MODELS_UNDER_TEST } from "./models.js";
+import { id as textId, dataset as textDataset } from "./datasets/text.js";
+import { id as imageId, dataset as imageDataset } from "./datasets/image.js";
+import { MODELS_UNDER_TEST, VISION_MODELS } from "./models.js";
 
 const langfuse = new LangfuseClient();
+
+/**
+ * Dataset registry: maps a dataset id to the model set it should run against.
+ * Text runs against all chat models; image runs only against vision models.
+ */
+const DATASETS = {
+  [textId]: { models: MODELS_UNDER_TEST, items: textDataset },
+  [imageId]: { models: VISION_MODELS, items: imageDataset },
+};
+
+/**
+ * Builds the user message content for an eval item. Plain strings are sent
+ * as-is; items that carry an `image` (base64 data URL) are expanded into an
+ * OpenAI-style array of content parts so the model receives the pixels.
+ */
+function buildUserContent(item) {
+  if (!item.image) return item.input;
+  return [
+    { type: "text", text: item.input },
+    { type: "image_url", image_url: { url: item.image } },
+  ];
+}
+
+/**
+ * Picks the dataset to run. `npm run eval -- image`, `-- --dataset image`,
+ * `--dataset=image`, or PACKAGE selection all resolve the same way. Defaults
+ * to the text dataset.
+ */
+function resolveDataset() {
+  const argv = process.argv.slice(2);
+  let name = textId;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--dataset") {
+      name = argv[i + 1];
+    } else if (arg.startsWith("--dataset=")) {
+      name = arg.split("=")[1];
+    } else if (!arg.startsWith("--")) {
+      name = arg; // positional: `npm run eval -- image`
+    }
+  }
+  return name;
+}
 
 /**
  * Runs a single (model, dataset item) pair inside its own Langfuse trace:
@@ -18,16 +62,23 @@ const langfuse = new LangfuseClient();
  */
 async function runOne(model, item) {
   return startActiveObservation(`eval:${model}:${item.id}`, async (span) => {
+    const userMessage = { role: "user", content: buildUserContent(item) };
+
     span.update({
       input: { prompt: item.input },
-      metadata: { datasetId: item.id, model, criteria: item.criteria },
+      metadata: {
+        datasetId: item.id,
+        model,
+        criteria: item.criteria,
+        hasImage: Boolean(item.image),
+      },
     });
 
     const generation = span.startObservation(
       "groq-completion",
       {
         model,
-        input: [{ role: "user", content: item.input }],
+        input: [userMessage],
       },
       { asType: "generation" }
     );
@@ -38,7 +89,7 @@ async function runOne(model, item) {
     try {
       const result = await callGroq({
         model,
-        messages: [{ role: "user", content: item.input }],
+        messages: [userMessage],
       });
       output = result.content;
       usage = result.usage;
@@ -87,11 +138,11 @@ async function runOne(model, item) {
  * actually available to this Groq API key -- rather than discovering it
  * mid-run after burning some calls, or worse, silently scoring an error.
  */
-async function assertModelsAvailable() {
+async function assertModelsAvailable(models) {
   console.log("Checking model availability against Groq...");
   const available = await listGroqModelIds();
 
-  const requested = [...new Set([...MODELS_UNDER_TEST, JUDGE_MODEL])];
+  const requested = [...new Set([...models, JUDGE_MODEL])];
   const missing = requested.filter((id) => !available.has(id));
 
   if (missing.length > 0) {
@@ -100,7 +151,7 @@ async function assertModelsAvailable() {
     console.error(`\nAvailable models:`);
     for (const id of [...available].sort()) console.error(`  - ${id}`);
     console.error(
-      `\nFix src/models.js (MODELS_UNDER_TEST) or JUDGE_MODEL in .env, then re-run.`
+      `\nFix the dataset's model list in src/models.js or JUDGE_MODEL in .env, then re-run.`
     );
     process.exit(1);
   }
@@ -109,17 +160,33 @@ async function assertModelsAvailable() {
 }
 
 async function main() {
-  if (MODELS_UNDER_TEST.length === 0) {
-    console.error("MODELS_UNDER_TEST is empty. Add at least one model id in src/models.js.");
+  const datasetId = resolveDataset();
+  const selected = DATASETS[datasetId];
+
+  if (!selected) {
+    console.error(
+      `Unknown dataset "${datasetId}". Available: ${Object.keys(DATASETS).join(", ")}.`
+    );
     process.exit(1);
   }
 
-  await assertModelsAvailable();
+  const { models, items } = selected;
+
+  if (models.length === 0) {
+    console.error(
+      `No models configured for dataset "${datasetId}". Add model ids to its list in src/models.js.`
+    );
+    process.exit(1);
+  }
+
+  console.log(`Dataset: ${datasetId} (${items.length} case(s), ${models.length} model(s))`);
+
+  await assertModelsAvailable(models);
 
   const results = [];
 
-  for (const model of MODELS_UNDER_TEST) {
-    for (const item of dataset) {
+  for (const model of models) {
+    for (const item of items) {
       console.log(`Running ${model} on "${item.id}"...`);
       const result = await runOne(model, item);
       results.push(result);

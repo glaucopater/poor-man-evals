@@ -5,7 +5,9 @@
   "type": "module",
   "main": "src/runEval.js",
   "scripts": {
-    "eval": "node src/runEval.js"
+    "eval": "node src/runEval.js",
+    "eval:text": "node src/runEval.js text",
+    "eval:image": "node src/runEval.js image"
   },
   "license": "MIT",
   "dependencies": {
