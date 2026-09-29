@@ -36,50 +36,50 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@langfuse/client@npm:^4.2.0":
-  version: 4.6.1
-  resolution: "@langfuse/client@npm:4.6.1"
+"@langfuse/client@npm:^5.11.1":
+  version: 5.11.1
+  resolution: "@langfuse/client@npm:5.11.1"
   dependencies:
-    "@langfuse/core": "npm:^4.6.1"
-    "@langfuse/tracing": "npm:^4.6.1"
+    "@langfuse/core": "npm:^5.11.1"
+    "@langfuse/tracing": "npm:^5.11.1"
     mustache: "npm:^4.2.0"
   peerDependencies:
     "@opentelemetry/api": ^1.9.0
-  checksum: 10c0/65ee3d309374597c8d81ec6e60bc34fabc4cda47754785d767adb30dc760a9d436b9e766c294ddd729adf07f4efd39588305cce2995cf7cb5a53d1f0ac8241d8
+  checksum: 10c0/22d47ad562c3a233ff4db1e9d18c5ee0ed1bfaa655723d1e507fb9235cdb7718f610104085bd171b03b573d98c4851e63a0ec5ab9a6ee66446c08979e99ccb1d
   languageName: node
   linkType: hard
 
-"@langfuse/core@npm:^4.6.1":
-  version: 4.6.1
-  resolution: "@langfuse/core@npm:4.6.1"
+"@langfuse/core@npm:^5.11.1":
+  version: 5.11.1
+  resolution: "@langfuse/core@npm:5.11.1"
   peerDependencies:
     "@opentelemetry/api": ^1.9.0
-  checksum: 10c0/2aa1a277ba56cee81bd9a79641bd2ccbf80bd2121d7837bf727eeccc6ad3414c385f4d9915a3f7547be14e5ebf76b7c2c4e4ab67577d694b2fd47a769115f222
+  checksum: 10c0/9e2b1d5e7513dd28c1584afbf890d05c71f6f98edaa29da630031043b21d878f198538f4af28b8da005fa8c39096f92c7321de3588fca5c50fae14e9cfda6c0c
   languageName: node
   linkType: hard
 
-"@langfuse/otel@npm:^4.2.0":
-  version: 4.6.1
-  resolution: "@langfuse/otel@npm:4.6.1"
+"@langfuse/otel@npm:^5.11.1":
+  version: 5.11.1
+  resolution: "@langfuse/otel@npm:5.11.1"
   dependencies:
-    "@langfuse/core": "npm:^4.6.1"
+    "@langfuse/core": "npm:^5.11.1"
   peerDependencies:
     "@opentelemetry/api": ^1.9.0
     "@opentelemetry/core": ^2.0.1
     "@opentelemetry/exporter-trace-otlp-http": ">=0.202.0 <1.0.0"
     "@opentelemetry/sdk-trace-base": ^2.0.1
-  checksum: 10c0/9d29c41b6ee1c83ad54f06479b2c1487a35b165f224fdf3ab520a8f20ed9d47a7ef314928ca6aeaab214163fada8aae51ba0ee4663a29429353106a11135cdde
+  checksum: 10c0/5ddeff7923440a9c23e3abc176aa3ad9e1edc43c4de810dc0c2467a09b854b6c36319089db1d97c0b77c337b3465501c3de6c962a4909ec28cb82ca5af22d36b
   languageName: node
   linkType: hard
 
-"@langfuse/tracing@npm:^4.2.0, @langfuse/tracing@npm:^4.6.1":
-  version: 4.6.1
-  resolution: "@langfuse/tracing@npm:4.6.1"
+"@langfuse/tracing@npm:^5.11.1":
+  version: 5.11.1
+  resolution: "@langfuse/tracing@npm:5.11.1"
   dependencies:
-    "@langfuse/core": "npm:^4.6.1"
+    "@langfuse/core": "npm:^5.11.1"
   peerDependencies:
     "@opentelemetry/api": ^1.9.0
-  checksum: 10c0/1243e31009d83dd69722e6c79d3b9635318c92d89567a131b25ee1e7fafca9dae8345bce51cec9b271a835ddde677c57a26ab964b694649ed08f2f3f6e179868
+  checksum: 10c0/d230232b6ccd3c763845df908e91bc47c27e85e30385494eb43e20f1f8f9dce2758a4b39194b43a6007ec8b72761a7dbacbc9eb318f8b9c96d241de7b1285d32
   languageName: node
   linkType: hard
 
@@ -709,9 +709,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "poor-man-evals@workspace:."
   dependencies:
-    "@langfuse/client": "npm:^4.2.0"
-    "@langfuse/otel": "npm:^4.2.0"
-    "@langfuse/tracing": "npm:^4.2.0"
+    "@langfuse/client": "npm:^5.11.1"
+    "@langfuse/otel": "npm:^5.11.1"
+    "@langfuse/tracing": "npm:^5.11.1"
     "@opentelemetry/api": "npm:^1.9.0"
     "@opentelemetry/core": "npm:^2.0.1"
     "@opentelemetry/exporter-trace-otlp-http": "npm:^0.221.0"

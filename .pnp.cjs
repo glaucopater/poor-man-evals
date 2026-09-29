@@ -28,9 +28,9 @@ const RAW_RUNTIME_STATE =
       [null, {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["@langfuse/client", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
-          ["@langfuse/otel", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
-          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
+          ["@langfuse/client", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
+          ["@langfuse/otel", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
+          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
           ["@opentelemetry/api", "npm:1.9.1"],\
           ["@opentelemetry/core", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:2.10.0"],\
           ["@opentelemetry/exporter-trace-otlp-http", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:0.221.0"],\
@@ -76,19 +76,19 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@langfuse/client", [\
-      ["npm:4.6.1", {\
-        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-client-npm-4.6.1-527ba1111b-10c0.zip/node_modules/@langfuse/client/",\
+      ["npm:5.11.1", {\
+        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-client-npm-5.11.1-5ac45b2683-10c0.zip/node_modules/@langfuse/client/",\
         "packageDependencies": [\
-          ["@langfuse/client", "npm:4.6.1"]\
+          ["@langfuse/client", "npm:5.11.1"]\
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1", {\
-        "packageLocation": "./.yarn/__virtual__/@langfuse-client-virtual-3d0a2cde10/3/AppData/Local/Yarn/Berry/cache/@langfuse-client-npm-4.6.1-527ba1111b-10c0.zip/node_modules/@langfuse/client/",\
+      ["virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1", {\
+        "packageLocation": "./.yarn/__virtual__/@langfuse-client-virtual-4fd2e5a412/3/AppData/Local/Yarn/Berry/cache/@langfuse-client-npm-5.11.1-5ac45b2683-10c0.zip/node_modules/@langfuse/client/",\
         "packageDependencies": [\
-          ["@langfuse/client", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
-          ["@langfuse/core", "virtual:3d0a2cde109c18dffc972cad27484f78f982b1ae724ed36a84a7b29b20026409f65b2cd4cabc85a6083e2aef6df85e0a7d6af0a3e8eb35b96d348f6071b9b8b8#npm:4.6.1"],\
-          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
+          ["@langfuse/client", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
+          ["@langfuse/core", "virtual:4fd2e5a4122f75356e875468c7b033cfb56f2f4333e371b97a07856bea05c1e687916c6029c65904459380d96c7dd661247cc9d6aa8b68a38dd36f9c19fe9692#npm:5.11.1"],\
+          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
           ["@opentelemetry/api", "npm:1.9.1"],\
           ["@types/opentelemetry__api", null],\
           ["mustache", "npm:4.2.0"]\
@@ -101,17 +101,17 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@langfuse/core", [\
-      ["npm:4.6.1", {\
-        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-core-npm-4.6.1-8f82d59c4f-10c0.zip/node_modules/@langfuse/core/",\
+      ["npm:5.11.1", {\
+        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-core-npm-5.11.1-5cb2db12c3-10c0.zip/node_modules/@langfuse/core/",\
         "packageDependencies": [\
-          ["@langfuse/core", "npm:4.6.1"]\
+          ["@langfuse/core", "npm:5.11.1"]\
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:3d0a2cde109c18dffc972cad27484f78f982b1ae724ed36a84a7b29b20026409f65b2cd4cabc85a6083e2aef6df85e0a7d6af0a3e8eb35b96d348f6071b9b8b8#npm:4.6.1", {\
-        "packageLocation": "./.yarn/__virtual__/@langfuse-core-virtual-47dc8e5ae0/3/AppData/Local/Yarn/Berry/cache/@langfuse-core-npm-4.6.1-8f82d59c4f-10c0.zip/node_modules/@langfuse/core/",\
+      ["virtual:4fd2e5a4122f75356e875468c7b033cfb56f2f4333e371b97a07856bea05c1e687916c6029c65904459380d96c7dd661247cc9d6aa8b68a38dd36f9c19fe9692#npm:5.11.1", {\
+        "packageLocation": "./.yarn/__virtual__/@langfuse-core-virtual-a86b2e8463/3/AppData/Local/Yarn/Berry/cache/@langfuse-core-npm-5.11.1-5cb2db12c3-10c0.zip/node_modules/@langfuse/core/",\
         "packageDependencies": [\
-          ["@langfuse/core", "virtual:3d0a2cde109c18dffc972cad27484f78f982b1ae724ed36a84a7b29b20026409f65b2cd4cabc85a6083e2aef6df85e0a7d6af0a3e8eb35b96d348f6071b9b8b8#npm:4.6.1"],\
+          ["@langfuse/core", "virtual:4fd2e5a4122f75356e875468c7b033cfb56f2f4333e371b97a07856bea05c1e687916c6029c65904459380d96c7dd661247cc9d6aa8b68a38dd36f9c19fe9692#npm:5.11.1"],\
           ["@opentelemetry/api", "npm:1.9.1"],\
           ["@types/opentelemetry__api", null]\
         ],\
@@ -123,18 +123,18 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@langfuse/otel", [\
-      ["npm:4.6.1", {\
-        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-otel-npm-4.6.1-29b3fca951-10c0.zip/node_modules/@langfuse/otel/",\
+      ["npm:5.11.1", {\
+        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-otel-npm-5.11.1-13f9887843-10c0.zip/node_modules/@langfuse/otel/",\
         "packageDependencies": [\
-          ["@langfuse/otel", "npm:4.6.1"]\
+          ["@langfuse/otel", "npm:5.11.1"]\
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1", {\
-        "packageLocation": "./.yarn/__virtual__/@langfuse-otel-virtual-06ea497147/3/AppData/Local/Yarn/Berry/cache/@langfuse-otel-npm-4.6.1-29b3fca951-10c0.zip/node_modules/@langfuse/otel/",\
+      ["virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1", {\
+        "packageLocation": "./.yarn/__virtual__/@langfuse-otel-virtual-acc52887fe/3/AppData/Local/Yarn/Berry/cache/@langfuse-otel-npm-5.11.1-13f9887843-10c0.zip/node_modules/@langfuse/otel/",\
         "packageDependencies": [\
-          ["@langfuse/core", "virtual:3d0a2cde109c18dffc972cad27484f78f982b1ae724ed36a84a7b29b20026409f65b2cd4cabc85a6083e2aef6df85e0a7d6af0a3e8eb35b96d348f6071b9b8b8#npm:4.6.1"],\
-          ["@langfuse/otel", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
+          ["@langfuse/core", "virtual:4fd2e5a4122f75356e875468c7b033cfb56f2f4333e371b97a07856bea05c1e687916c6029c65904459380d96c7dd661247cc9d6aa8b68a38dd36f9c19fe9692#npm:5.11.1"],\
+          ["@langfuse/otel", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
           ["@opentelemetry/api", "npm:1.9.1"],\
           ["@opentelemetry/core", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:2.10.0"],\
           ["@opentelemetry/exporter-trace-otlp-http", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:0.221.0"],\
@@ -158,18 +158,18 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@langfuse/tracing", [\
-      ["npm:4.6.1", {\
-        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-tracing-npm-4.6.1-e3de52b25e-10c0.zip/node_modules/@langfuse/tracing/",\
+      ["npm:5.11.1", {\
+        "packageLocation": "../../AppData/Local/Yarn/Berry/cache/@langfuse-tracing-npm-5.11.1-e62fe37656-10c0.zip/node_modules/@langfuse/tracing/",\
         "packageDependencies": [\
-          ["@langfuse/tracing", "npm:4.6.1"]\
+          ["@langfuse/tracing", "npm:5.11.1"]\
         ],\
         "linkType": "SOFT"\
       }],\
-      ["virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1", {\
-        "packageLocation": "./.yarn/__virtual__/@langfuse-tracing-virtual-596d7de6f1/3/AppData/Local/Yarn/Berry/cache/@langfuse-tracing-npm-4.6.1-e3de52b25e-10c0.zip/node_modules/@langfuse/tracing/",\
+      ["virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1", {\
+        "packageLocation": "./.yarn/__virtual__/@langfuse-tracing-virtual-1a23809222/3/AppData/Local/Yarn/Berry/cache/@langfuse-tracing-npm-5.11.1-e62fe37656-10c0.zip/node_modules/@langfuse/tracing/",\
         "packageDependencies": [\
-          ["@langfuse/core", "virtual:3d0a2cde109c18dffc972cad27484f78f982b1ae724ed36a84a7b29b20026409f65b2cd4cabc85a6083e2aef6df85e0a7d6af0a3e8eb35b96d348f6071b9b8b8#npm:4.6.1"],\
-          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
+          ["@langfuse/core", "virtual:4fd2e5a4122f75356e875468c7b033cfb56f2f4333e371b97a07856bea05c1e687916c6029c65904459380d96c7dd661247cc9d6aa8b68a38dd36f9c19fe9692#npm:5.11.1"],\
+          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
           ["@opentelemetry/api", "npm:1.9.1"],\
           ["@types/opentelemetry__api", null]\
         ],\
@@ -1195,9 +1195,9 @@ const RAW_RUNTIME_STATE =
       ["workspace:.", {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["@langfuse/client", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
-          ["@langfuse/otel", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
-          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:4.6.1"],\
+          ["@langfuse/client", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
+          ["@langfuse/otel", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
+          ["@langfuse/tracing", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:5.11.1"],\
           ["@opentelemetry/api", "npm:1.9.1"],\
           ["@opentelemetry/core", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:2.10.0"],\
           ["@opentelemetry/exporter-trace-otlp-http", "virtual:a5e83f0f4d79a286b67b9f4049b56088bec238b766b9c1d02474dc2bdbfe1aa5e332dba172c45555d5a9e812dc7a6bbc62df1da4aecf0eefd006b761dabb9166#npm:0.221.0"],\
