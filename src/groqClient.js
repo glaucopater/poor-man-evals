@@ -54,7 +54,9 @@ async function groqFetch(url, options) {
  *
  * @param {object} params
  * @param {string} params.model - Groq model id, e.g. "qwen/qwen3.6-27b".
- * @param {Array<{role: string, content: string}>} params.messages
+ * @param {Array<{role: string, content: string | Array<object>}>} params.messages
+ *   content is a string for text prompts, or an OpenAI content-parts array
+ *   ({type, text} / {type, image_url}) for multimodal (image) prompts.
  * @param {number} [params.temperature]
  * @param {number} [params.max_completion_tokens]
  * @param {number} [params.top_p]

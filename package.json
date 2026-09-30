@@ -5,13 +5,16 @@
   "type": "module",
   "main": "src/runEval.js",
   "scripts": {
-    "eval": "node src/runEval.js"
+    "eval": "node src/runEval.js",
+    "eval:text": "node src/runEval.js text",
+    "eval:image": "node src/runEval.js image",
+    "verify:langfuse": "node scripts/verify-langfuse-v5.mjs"
   },
   "license": "MIT",
   "dependencies": {
-    "@langfuse/client": "^4.2.0",
-    "@langfuse/otel": "^4.2.0",
-    "@langfuse/tracing": "^4.2.0",
+    "@langfuse/client": "^5.11.1",
+    "@langfuse/otel": "^5.11.1",
+    "@langfuse/tracing": "^5.11.1",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/core": "^2.0.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
@@ -20,6 +23,6 @@
     "dotenv": "^16.4.5"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": ">=20"
   }
 }

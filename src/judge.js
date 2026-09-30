@@ -1,5 +1,6 @@
-import { callGroq } from "./groqClient.js";
+import { callModel, DEFAULT_PROVIDER } from "./providers.js";
 
+export const JUDGE_PROVIDER = process.env.JUDGE_PROVIDER || DEFAULT_PROVIDER;
 export const JUDGE_MODEL = process.env.JUDGE_MODEL || "openai/gpt-oss-20b";
 
 const buildJudgePrompt = (input, output, criteria) => `You are a strict, impartial evaluator of LLM outputs.
@@ -39,7 +40,8 @@ Respond with ONLY a JSON object, no markdown fences, no extra text, in exactly t
  * @returns {Promise<{score: number|null, reasoning: string}>}
  */
 export async function judgeOutput({ input, output, criteria }) {
-  const { content } = await callGroq({
+  const { content } = await callModel({
+    provider: JUDGE_PROVIDER,
     model: JUDGE_MODEL,
     messages: [{ role: "user", content: buildJudgePrompt(input, output, criteria) }],
     temperature: 0,
