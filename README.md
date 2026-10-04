@@ -38,14 +38,14 @@ test/                     Unit tests (node --test), no provider calls
 scripts/
   mock-langfuse.mjs       Throwaway Langfuse stand-in, shared by the two scripts below
   eval-dry.mjs            Runs a real eval with Langfuse mocked (yarn eval:dry)
-  verify-langfuse-v5.mjs  End-to-end assertions against that mock
+  verify-langfuse.mjs     End-to-end assertions against that mock
 ```
 
 For every `(model, dataset item)` pair, `runEval.js`:
-1. Applies the run's correlating attributes (`traceName`, `sessionId`, `tags`, `metadata`) with `propagateAttributes(...)`, then opens the trace's root observation. Langfuse v5 is observations-first, so these attributes land on the root *and* on every child observation.
+1. Applies the run's correlating attributes (`traceName`, `sessionId`, `tags`, `metadata`) with `propagateAttributes(...)`, then opens the trace's root observation. Langfuse is observations-first, so these attributes land on the root *and* on every child observation.
 2. Calls the model's provider with the prompt, logged as a `generation` observation (model, input, output, token usage). Because the generation inherits the session id, per-session cost aggregation works.
 3. Calls the judge model to score the output 1-5 against the item's criteria.
-4. Attaches the score to the generation observation via `langfuse.score.observation(...)` (observation-level scores are what v4 evaluators target).
+4. Attaches the score to the generation observation via `langfuse.score.observation(...)` (observation-level scores are what evaluators target).
 5. Prints a summary table, including average score per model.
 
 Failures are scoped per item and never abort the run: a model error or a judge
@@ -60,19 +60,20 @@ Open your Langfuse project afterwards to see traces per run and compare models/s
 
 Each run gets one generated session id (printed as `Langfuse session: ...`), so a run's traces group together in the Sessions view.
 
-## Langfuse version
+## Langfuse
 
-This project targets **Langfuse v4** with **JS/TS SDK v5+** (`@langfuse/*` `^5.11.1`), which requires **Node 20+**.
+Uses the current Langfuse: the `@langfuse/*` JS SDK `^5.11.1` (Node 20+), against
+Langfuse Cloud or a self-hosted server. Nothing here depends on a deprecated API.
 
-Notable v4/v5 behaviours this code relies on:
+Behaviours the harness relies on:
 
-- Spans are exported over OTLP/HTTP to `/api/public/otel/v1/traces` (the v4 ingestion path) by `LangfuseSpanProcessor`.
-- v5 applies a smart default span filter. Every span here is created by the Langfuse SDK, so the whole trace tree is exported; pass `shouldExportSpan: () => true` to `LangfuseSpanProcessor` in `src/instrumentation.js` if you later add non-Langfuse spans.
-- Trace-level attributes are set with `propagateAttributes(...)` (the v5 replacement for `updateActiveTrace()`), and propagated `metadata` must be `Record<string, string>` with values <= 200 chars — which is why the (long) judging criteria live in the root observation's input.
+- Spans are exported over OTLP/HTTP to `/api/public/otel/v1/traces` by `LangfuseSpanProcessor`; scores go to `/api/public/ingestion`.
+- The SDK applies a smart default span filter. Every span here is created by the Langfuse SDK, so the whole trace tree is exported; pass `shouldExportSpan: () => true` to `LangfuseSpanProcessor` in `src/instrumentation.js` if you later add non-Langfuse spans.
+- Trace-level attributes are set with `propagateAttributes(...)`. Propagated `metadata` must be `Record<string, string>` with values <= 200 chars — which is why the (long) judging criteria live in the root observation's input.
 - `environment` / `release` come from `LANGFUSE_TRACING_ENVIRONMENT` / `LANGFUSE_RELEASE`. `src/instrumentation.js` defaults the environment to `NODE_ENV`. This matters: the score writer reads the same variable, so traces and their scores stay in one environment.
 - Base64 images in image cases are uploaded as Langfuse media and replaced with a media reference in span payloads.
 
-Run `yarn verify:langfuse` to check all of the above against a local mock endpoint (no provider calls, no writes to your project).
+Run `yarn verify:langfuse` to check all of the above against a local mock endpoint (no provider calls, no writes to your project). Run `yarn eval:dry` to exercise a real eval against the same mock, so nothing reaches your project.
 
 ## Setup
 
@@ -366,16 +367,29 @@ qwen/qwen3.8-27b (groq): 1/1 responses conform
 To add a deterministic scorer to your own dataset, set `scoreSchema` on the item
 and attach `responseFormat: toResponseFormat(yourSchema)`.
 
-## Run
+## Commands
 
-```bash
-yarn eval              # text dataset (default)
-yarn eval:text         # text dataset
-yarn eval:image        # image dataset
-yarn eval:complex      # complex-image dataset
-yarn eval:dry          # same run, Langfuse mocked - nothing is ingested
-yarn eval:complex --profile local    # use the "local" profile from eval.config.yaml
-```
+| Command | What it does |
+|---|---|
+| `yarn eval` | Text dataset (default) |
+| `yarn eval:text` | Text dataset, explicitly |
+| `yarn eval:image` | Image dataset |
+| `yarn eval:complex` | Complex-image dataset (on-disk image, schema-scored) |
+| `yarn eval:dry` | Any of the above with Langfuse mocked — nothing ingested |
+| `yarn eval --profile local` | Use the `local` profile from `eval.config.yaml` |
+| `yarn eval --dataset image` | Same as `yarn eval:image` |
+| `yarn test` | Unit tests — no API keys, no provider calls |
+| `yarn verify:langfuse` | End-to-end assertions against a mock Langfuse |
+| `yarn check` | `yarn test` + `yarn verify:langfuse` |
+
+A bare positional argument works too, so `yarn eval image` is the same as
+`yarn eval:image`. Arguments combine: `yarn eval:dry complex-image --profile local`.
+
+`--dataset` with no value is rejected with a usage message rather than an
+`Unknown dataset "undefined"`.
+
+To run every dataset in one go:
+`yarn eval:text && yarn eval:image && yarn eval:complex`.
 
 ### Dry runs
 
@@ -399,8 +413,6 @@ the run finishes by telling you exactly what *would* have been ingested:
 Use it as the default for "does this work?" and reach for a real `yarn eval` only
 when you actually want the results kept. A test run against the real project
 leaves a session of traces that is indistinguishable from real results later.
-
-To run every dataset in one go: `yarn eval:text && yarn eval:image && yarn eval:complex`.
 
 Console output looks like:
 
@@ -532,8 +544,7 @@ reasoning rather than just the diff.
 - Langfuse's own [Datasets](https://langfuse.com/docs/evaluation/dataset-runs)
   feature can replace the arrays in `src/datasets/` once you outgrow them —
   useful if you want to manage the eval set from the Langfuse UI instead of code.
-- Project-side v4 checks that still need a human: the **Evaluators** tab
-  (legacy trace-level rules) and **Project Settings > Integrations** (blob
-  storage / PostHog / Mixpanel exports). Both were empty when checked via the
-  API, but the API does not expose every legacy target, so confirm in the UI
-  before the v4 cutover.
+- Project-side checks that still need a human: **Project Settings >
+  Integrations** (blob storage / PostHog / Mixpanel exports). Both were empty
+  when checked via the API, but the API does not expose every target, so confirm
+  in the UI.

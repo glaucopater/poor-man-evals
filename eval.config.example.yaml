@@ -74,7 +74,7 @@ providers:
 langfuse:
   # Cloud: https://cloud.langfuse.com (US), https://us.cloud.langfuse.com,
   # https://jp.cloud.langfuse.com, https://hipaa.cloud.langfuse.com
-  # Or your self-hosted v4 URL.
+  # Or your self-hosted URL.
   base_url: https://cloud.langfuse.com
   # Environment tag for this run. Read by BOTH the span processor and the client
   # that writes scores, so traces and scores land in one environment.

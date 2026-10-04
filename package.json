@@ -11,7 +11,7 @@
     "eval:complex": "node src/runEval.js complex-image",
     "eval:dry": "node scripts/eval-dry.mjs",
     "test": "node --test test/*.test.mjs",
-    "verify:langfuse": "node scripts/verify-langfuse-v5.mjs",
+    "verify:langfuse": "node scripts/verify-langfuse.mjs",
     "check": "yarn test && yarn verify:langfuse"
   },
   "license": "MIT",

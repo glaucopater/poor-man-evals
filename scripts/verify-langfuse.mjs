@@ -1,5 +1,5 @@
-// Verifies the Langfuse v4/v5 migration without touching a real project or a
-// real model provider.
+// Verifies the Langfuse integration without touching a real project or a real
+// model provider.
 //
 // It runs the REAL pipeline (src/runEval.js -> src/instrumentation.js ->
 // LangfuseSpanProcessor + LangfuseClient) but:
@@ -8,9 +8,10 @@
 //   - stubs global fetch for the model/judge calls, so no provider is billed.
 //
 // Then it parses what actually left the process (OTLP/HTTP JSON export plus the
-// score-write batch) and asserts the v5 requirements: v4 ingestion path,
-// attributes propagated to the root AND the child generation, session id on the
-// cost-bearing generation, and observation-level scores.
+// score-write batch) and asserts what the harness depends on: the ingestion
+// paths, attributes propagated to the root AND the child generation, session id
+// on the cost-bearing generation, observation-level scores, and media upload in
+// place of inline base64.
 //
 // Usage: yarn verify:langfuse
 const failures = [];
@@ -197,7 +198,7 @@ const attr = (span, key) => {
 };
 
 check(happy.finished, "eval run completed", byPath(happy.traffic));
-check(otel.length > 0, "spans exported to the v4 OTLP path /otel/v1/traces", byPath(otel));
+check(otel.length > 0, "spans exported over OTLP to /otel/v1/traces", byPath(otel));
 check(
   otel.every((r) => (r.headers.authorization || "").startsWith("Basic ")),
   "OTLP export sends Basic auth"
@@ -211,11 +212,11 @@ const spans = otel.flatMap((r) =>
 const roots = spans.filter((s) => attr(s, "langfuse.internal.is_app_root") === true);
 const gens = spans.filter((s) => attr(s, "langfuse.observation.type") === "generation");
 
-check(spans.length === 6, "3 traces x 2 observations exported (v5 span filter kept them)", `spans=${spans.length}`);
+check(spans.length === 6, "3 traces x 2 observations exported (default span filter kept them)", `spans=${spans.length}`);
 check(roots.length === 3 && gens.length === 3, "exactly 3 root spans + 3 generations", `roots=${roots.length}, gens=${gens.length}`);
 check(spans.every((s) => s.scope === "langfuse-sdk"), "all spans from the langfuse-sdk scope");
 
-// v5: correlating attributes must be on the root AND every child observation.
+// Correlating attributes must be on the root AND every child observation.
 check(
   spans.every((s) => attr(s, "session.id") === happy.sessionId),
   "session id propagated to root and child observations",
@@ -240,7 +241,7 @@ check(
 );
 check(spans.every((s) => attr(s, "langfuse.trace.metadata.hasImage") === "true"), "hasImage metadata propagated");
 
-// v5 metadata constraint: string values, <= 200 chars. The long judging
+// Metadata constraint: string values, <= 200 chars. The long judging
 // criteria must therefore live on the root observation input, not metadata.
 const mdKeys = [...new Set(spans.flatMap((s) => (s.attributes ?? []).map((a) => a.key)))].filter((k) =>
   k.startsWith("langfuse.trace.metadata.")

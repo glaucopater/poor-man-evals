@@ -70,7 +70,7 @@ const DATASETS = {
 
 /**
  * Identifier shared by every trace in this process's run, used as the Langfuse
- * session id. Because v5 propagates the session id onto each observation, one
+ * session id. Because Langfuse propagates the session id onto each observation, one
  * run shows up as one session with correct per-session cost aggregation.
  */
 function newRunId() {
@@ -154,9 +154,9 @@ async function runJudge({ input, output, criteria }) {
 /**
  * Runs a single (model, dataset item) pair inside its own Langfuse trace.
  *
- * Langfuse v5 is observations-first: correlating attributes (trace name,
- * session, tags, metadata) are propagated to the root and to every child
- * observation rather than being stored on the trace alone. `propagateAttributes`
+ * Langfuse is observations-first: correlating attributes (trace name, session,
+ * tags, metadata) are propagated to the root and to every child observation
+ * rather than being stored on the trace alone. `propagateAttributes`
  * wraps the observation-producing call to establish that scope, so the
  * generation below carries the same session/tags/metadata as its root.
  * Note the propagated `metadata` must be `Record<string, string>` with values
@@ -249,8 +249,8 @@ async function runOne(model, item, run) {
         });
 
         // Observation-level score: the judge scores the model's generation, so
-        // the score is attached to that observation (v5's default target for
-        // evaluators) rather than to the trace. An unscorable judge result is
+        // the score is attached to that observation, which is what evaluators
+        // target, rather than to the trace as a whole. An unscorable judge result is
         // written under a different score name -- never as a 0, which would be
         // indistinguishable from a bad model answer.
         const score = buildJudgeScore(judged);

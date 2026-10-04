@@ -3,7 +3,7 @@
  *
  * Listens on an ephemeral loopback port and accepts everything, recording what
  * was sent. Used by two callers:
- *   - verify-langfuse-v5.mjs, which asserts on the recorded traffic
+ *   - verify-langfuse.mjs, which asserts on the recorded traffic
  *   - eval-dry.mjs, which points a real eval run at it so the run exercises the
  *     genuine providers while nothing is ingested into a real project
  *
