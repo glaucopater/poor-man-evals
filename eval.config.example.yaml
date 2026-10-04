@@ -1,0 +1,82 @@
+# poor-man-evals configuration
+#
+# Everything EXCEPT secrets. Keys live in .env (gitignored); this file is safe
+# to commit, so share it and review changes to it like code.
+#
+# Copy to eval.config.yaml to use it:  cp eval.config.example.yaml eval.config.yaml
+# If the file is absent the harness falls back to built-in defaults and reads
+# everything from .env as before.
+#
+# An unknown key here is a hard error, not a silently ignored line -- so a typo
+# like `max_retrries:` fails immediately instead of quietly doing nothing.
+
+# Profile used when --profile isn't passed. `default` means "no profile".
+profile: default
+
+profiles:
+  # A fully local, zero-cost run: local models, local judge, no API keys used.
+  local:
+    run:
+      enabled_providers: [ollama]
+    judge:
+      provider: ollama
+      model: qwen3.8:27b
+    providers:
+      ollama:
+        base_url: http://localhost:11434
+
+  # Hosted only. The judge runs on Groq even when the models under test are on
+  # NVIDIA, so the scorer stays independent of what it is scoring.
+  hosted:
+    run:
+      enabled_providers: [groq]
+    judge:
+      provider: groq
+      model: openai/gpt-oss-20b
+
+run:
+  # Which providers to actually run. Models stay in src/models.js; providers
+  # not listed here are skipped and reported.
+  enabled_providers: [groq, nvidia]
+
+judge:
+  provider: groq
+  model: openai/gpt-oss-20b
+  # Output budget for ONE verdict. A verdict is ~40-150 tokens, so this is
+  # generous headroom. Raise it only if you enable `think` below.
+  max_completion_tokens: 512
+  # Let the judge reason before answering. Defaults to false. A judge needs a
+  # terse verdict, not visible reasoning: on local Ollama, thinking ON made
+  # gemma4:12b burn 1000 tokens and still return nothing parseable, while
+  # thinking OFF returned a verdict in 39. Only sent to providers that support
+  # the switch (Ollama).
+  think: false
+
+providers:
+  groq:
+    # Groq's free tier allows as few as 10-30 requests/minute on some models,
+    # so the client waits this long between requests. Lower it on a paid tier.
+    min_request_interval_ms: 2200
+    max_retries: 5
+
+  nvidia:
+    # Limits vary by plan and model.
+    min_request_interval_ms: 2200
+    max_retries: 5
+
+  ollama:
+    # A local server has no API key and no rate limit, hence interval 0.
+    # Retries still exist because a cold model load can drop a connection.
+    base_url: http://localhost:11434
+    min_request_interval_ms: 0
+    max_retries: 2
+
+langfuse:
+  # Cloud: https://cloud.langfuse.com (US), https://us.cloud.langfuse.com,
+  # https://jp.cloud.langfuse.com, https://hipaa.cloud.langfuse.com
+  # Or your self-hosted URL.
+  base_url: https://cloud.langfuse.com
+  # Environment tag for this run. Read by BOTH the span processor and the client
+  # that writes scores, so traces and scores land in one environment.
+  environment: development
+  # release: my-experiment-tag

@@ -1,49 +1,17 @@
+import { normalizeCompletionContent } from "./content.js";
+import { createThrottledFetch, numFromEnv } from "./http.js";
+
 const NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_MODELS_URL = "https://integrate.api.nvidia.com/v1/models";
 
 // NVIDIA NIM rate limits vary by plan and model. Same approach as the Groq
 // client: sequential requests plus a minimum-interval throttle and 429
 // retry-with-backoff. Override via NVIDIA_MIN_REQUEST_INTERVAL_MS.
-const MIN_REQUEST_INTERVAL_MS = Number(process.env.NVIDIA_MIN_REQUEST_INTERVAL_MS ?? 2200);
-const MAX_RETRIES = Number(process.env.NVIDIA_MAX_RETRIES ?? 5);
-
-let lastRequestAt = 0;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function throttle() {
-  const waitMs = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
-  if (waitMs > 0) await sleep(waitMs);
-  lastRequestAt = Date.now();
-}
-
-/**
- * fetch() wrapper that self-throttles, and retries on 429 (rate limited)
- * with exponential backoff -- honoring the Retry-After header when present.
- */
-async function nvidiaFetch(url, options) {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    await throttle();
-    const res = await fetch(url, options);
-
-    if (res.status !== 429) return res;
-    if (attempt === MAX_RETRIES) return res; // give up; let the caller surface the error body
-
-    const retryAfterHeader = res.headers.get("retry-after");
-    const backoffMs = retryAfterHeader
-      ? Number(retryAfterHeader) * 1000
-      : Math.min(30_000, 1000 * 2 ** attempt);
-
-    console.warn(
-      `Rate limited by NVIDIA NIM (429). Waiting ${(backoffMs / 1000).toFixed(1)}s before retry ${
-        attempt + 1
-      }/${MAX_RETRIES}...`
-    );
-    await sleep(backoffMs);
-  }
-}
+const nvidiaFetch = createThrottledFetch({
+  label: "NVIDIA NIM",
+  minIntervalMs: numFromEnv("NVIDIA_MIN_REQUEST_INTERVAL_MS", 2200),
+  maxRetries: numFromEnv("NVIDIA_MAX_RETRIES", 5),
+});
 
 /**
  * Calls the NVIDIA NIM chat completions endpoint (OpenAI-compatible).
@@ -56,6 +24,8 @@ async function nvidiaFetch(url, options) {
  * @param {number} [params.temperature]
  * @param {number} [params.max_tokens]
  * @param {number} [params.top_p]
+ * @param {object} [params.response_format] - OpenAI structured-output spec,
+ *   e.g. `{type: "json_schema", json_schema: {name, strict, schema}}`.
  * @returns {Promise<{content: string, usage: object, raw: object}>}
  */
 export async function callNvidia({
@@ -64,6 +34,7 @@ export async function callNvidia({
   temperature = 0.6,
   max_tokens = 2048,
   top_p = 0.95,
+  response_format,
 }) {
   if (!process.env.NVIDIA_API_KEY) {
     throw new Error("NVIDIA_API_KEY is not set. Copy .env.example to .env and fill it in.");
@@ -82,6 +53,9 @@ export async function callNvidia({
       max_tokens,
       top_p,
       stream: false,
+      // Omitted entirely when undefined, so providers that reject an explicit
+      // null still get the plain request they expect.
+      ...(response_format ? { response_format } : {}),
     }),
   });
 
@@ -102,7 +76,7 @@ export async function callNvidia({
   const data = await res.json();
 
   return {
-    content: data.choices?.[0]?.message?.content ?? "",
+    content: normalizeCompletionContent(data),
     usage: data.usage ?? {},
     raw: data,
   };

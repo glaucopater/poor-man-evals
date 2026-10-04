@@ -8,7 +8,11 @@
     "eval": "node src/runEval.js",
     "eval:text": "node src/runEval.js text",
     "eval:image": "node src/runEval.js image",
-    "verify:langfuse": "node scripts/verify-langfuse-v5.mjs"
+    "eval:complex": "node src/runEval.js complex-image",
+    "eval:dry": "node scripts/eval-dry.mjs",
+    "test": "node --test test/*.test.mjs",
+    "verify:langfuse": "node scripts/verify-langfuse.mjs",
+    "check": "yarn test && yarn verify:langfuse"
   },
   "license": "MIT",
   "dependencies": {
@@ -20,7 +24,8 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
     "@opentelemetry/sdk-node": "^0.221.0",
     "@opentelemetry/sdk-trace-base": "^2.0.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "yaml": "^2.9.1"
   },
   "engines": {
     "node": ">=20"

@@ -1,7 +1,8 @@
 // Models under test, run against the full dataset via the chat completions
 // endpoint. Each entry is `{ id, provider }`, where `provider` is a key from
-// src/providers.js ("groq" or "nvidia" today). A bare string still works and
-// defaults to Groq, but tag entries explicitly once you mix providers.
+// src/providers/index.js ("groq", "nvidia" or "ollama"). A bare string still
+// works and defaults to Groq, but tag entries explicitly once you mix
+// providers.
 //
 // Edit freely -- any *chat-capable* model id on that provider's account works.
 // The NVIDIA catalogs also list embeddings, rerankers, safety classifiers,
@@ -13,7 +14,6 @@ export const MODELS_UNDER_TEST = [
   { id: "qwen/qwen3.8-27b", provider: "groq" },
   { id: "openai/gpt-oss-120b", provider: "groq" },
   { id: "openai/gpt-oss-20b", provider: "groq" },
-  { id: "openai/gpt-oss-safeguard-20b", provider: "groq" },
 
   // --- NVIDIA NIM ---
   { id: "deepseek-ai/deepseek-v4.1-flash", provider: "nvidia" },
@@ -39,6 +39,41 @@ export const VISION_MODELS = [
   { id: "microsoft/phi-3-vision-128k-instruct", provider: "nvidia" },
 ];
 
+// Locally installed Ollama models (provider: "ollama"). No API key, no rate
+// limit, no cost -- which is what makes them useful as a baseline to compare
+// the hosted models against.
+//
+// The ids below are whatever `ollama list` reports on this machine. The harness
+// fails fast and prints the local catalog if one is missing, so a stale entry
+// here is a one-line fix rather than a confusing mid-run error. Vision
+// capability is checked at startup too, so a text-only model is reported as
+// such instead of silently ignoring an image.
+export const LOCAL_MODELS = [
+  { id: "qwen3-vl:2b", provider: "ollama" },
+  { id: "qwen3.8:27b", provider: "ollama" },
+  { id: "qwen3.5:9b", provider: "ollama" },
+  { id: "gemma4:12b", provider: "ollama" },
+  { id: "gemma4:e2b", provider: "ollama" },
+  { id: "llava:latest", provider: "ollama" },
+];
+
+// Every local model installed here is also vision-capable (`ollama show` reports
+// the vision capability for all six), so one list serves both the text and image
+// datasets. Split it if you pull a text-only model -- the vision datasets must
+// not silently include it.
+export const LOCAL_VISION_MODELS = LOCAL_MODELS;
+
+// The lists the datasets actually run: local models first, because they are free
+// and fast, then the hosted ones. `run.enabled_providers` in eval.config.yaml
+// (or ENABLED_PROVIDERS) narrows this at runtime, so a profile of `local` runs
+// only the Ollama entries and a profile of `hosted` runs only the paid ones.
+//
+// Keeping local models in the same list -- rather than in a separate exported
+// array a caller has to remember to concatenate -- is what stops a dataset from
+// silently having zero runnable models under a local profile.
+export const CHAT_MODELS = [...LOCAL_MODELS, ...MODELS_UNDER_TEST];
+export const VISION_MODELS_ALL = [...LOCAL_VISION_MODELS, ...VISION_MODELS];
+
 // Not chat-completion models -- included here for reference, but they won't
 // work with this harness as-is since they use different endpoints and
 // input/output shapes:
@@ -48,3 +83,6 @@ export const VISION_MODELS = [
 //       speech-to-text, via POST /openai/v1/audio/transcriptions (takes audio input)
 //   - meta-llama/llama-prompt-guard-2-22m, meta-llama/llama-prompt-guard-2-86m
 //       prompt-injection/jailbreak classifiers, not general chat models
+//   - openai/gpt-oss-safeguard-20b
+//       Groq content-moderation classifier; it has no chat completions API, so
+//       it was previously listed under MODELS_UNDER_TEST where every call 400s
