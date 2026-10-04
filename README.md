@@ -181,9 +181,11 @@ end to an interface that already had to exist.
 
 - **Models to compare** — edit `src/models.js`. Each entry is
   `{ id, provider }`, where `provider` is `"groq"`, `"nvidia"` or `"ollama"`. A
-  bare string still works and defaults to Groq. `MODELS_UNDER_TEST` drives the
-  text dataset; `VISION_MODELS` (hosted) and `LOCAL_VISION_MODELS` (Ollama)
-  drive the image datasets.
+  bare string still works and defaults to Groq. The lists the datasets actually
+  run are `CHAT_MODELS` (text) and `VISION_MODELS_ALL` (both image datasets),
+  which put `LOCAL_MODELS` first and the hosted entries after, so a local
+  profile runs the Ollama models and a hosted profile runs the paid ones.
+  `MODELS_UNDER_TEST` and `VISION_MODELS` remain the hosted-only lists.
 - **Prompts and pass/fail criteria** — edit `src/datasets/text.js` and
   `src/datasets/image.js`. Each item is `{ id, input, criteria }` (`image` items
   add a base64 `image` data URL); `criteria` is plain English describing what a
@@ -195,6 +197,10 @@ end to an interface that already had to exist.
   `SUPPORTED_PARAMS` in `src/providers/index.js`. Nothing else needs to change.
 - **Turning a provider off** — remove it from `run.enabled_providers` (or use a
   profile). Models stay in `src/models.js`; the harness skips them and says so.
+  Note the datasets do *not* each keep a private model list: they run
+  `CHAT_MODELS` / `VISION_MODELS_ALL`, which already contain both the local and
+  hosted entries. That is what keeps `yarn eval` from reporting "no models to
+  run" when you switch to a local profile.
 
 ## Images on disk
 
@@ -361,7 +367,7 @@ and attach `responseFormat: toResponseFormat(yourSchema)`.
 ```bash
 yarn eval              # text dataset (default)
 yarn eval:text         # text dataset
-yarn eval:image        # image dataset (VISION_MODELS only)
+yarn eval:image        # image dataset
 yarn eval:complex      # complex-image dataset
 yarn eval:complex --profile local    # use the "local" profile from eval.config.yaml
 ```

@@ -25,9 +25,8 @@ import {
 } from "./datasets/complex-image.js";
 import { scoreAgainstSchema } from "./jsonSchema.js";
 import {
-  MODELS_UNDER_TEST,
-  VISION_MODELS,
-  COMPLEX_IMAGE_MODELS,
+  CHAT_MODELS,
+  VISION_MODELS_ALL,
 } from "./models.js";
 
 const langfuse = new LangfuseClient();
@@ -49,12 +48,12 @@ const ENABLED_PROVIDERS = new Set(
  * Text runs against all chat models; image runs only against vision models.
  */
 const DATASETS = {
-  [textId]: { models: MODELS_UNDER_TEST.map(normalizeModel), items: textDataset },
-  [imageId]: { models: VISION_MODELS.map(normalizeModel), items: imageDataset },
+  [textId]: { models: CHAT_MODELS.map(normalizeModel), items: textDataset },
+  [imageId]: { models: VISION_MODELS_ALL.map(normalizeModel), items: imageDataset },
   [complexImageId]: {
     // Local models first: they are free and fast, so the run gives you signal
     // before the hosted (billed, rate-limited) models get to it.
-    models: COMPLEX_IMAGE_MODELS.map(normalizeModel),
+    models: VISION_MODELS_ALL.map(normalizeModel),
     items: complexImageDataset,
     notes: complexImageNotes,
   },
@@ -449,9 +448,28 @@ async function main() {
   }
 
   if (models.length === 0) {
+    // Name the actual cause rather than suggesting only "widen
+    // ENABLED_PROVIDERS", which is wrong when the dataset simply has no models
+    // for any enabled provider -- the usual cause of hitting this under a local
+    // profile, where every entry in the list belongs to a hosted provider.
+    const listProviders = [...new Set(allModels.map((m) => m.provider))].sort();
+    console.error(`\nNo models to run for dataset "${datasetId}".\n`);
     console.error(
-      `No models to run for dataset "${datasetId}". Either add model ids to its list in src/models.js, ` +
-        `or widen ENABLED_PROVIDERS (currently: ${[...ENABLED_PROVIDERS].join(", ")}).`
+      `  The dataset lists ${allModels.length} model(s), all on: ${listProviders.join(", ")}`
+    );
+    console.error(`  Enabled providers are: ${[...ENABLED_PROVIDERS].join(", ")}\n`);
+    console.error(`  To fix, either:`);
+    console.error(
+      `    - run a different profile:  yarn eval --profile hosted`
+    );
+    console.error(
+      `    - widen the config:           run.enabled_providers in eval.config.yaml`
+    );
+    console.error(
+      `    - add models for the enabled provider(s) in src/models.js` +
+        (listProviders.includes("ollama")
+          ? ""
+          : `\n      (there are currently no "${[...ENABLED_PROVIDERS][0]}" models in that list)`)
     );
     process.exit(1);
   }

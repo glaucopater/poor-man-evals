@@ -47,8 +47,8 @@ export const VISION_MODELS = [
 // fails fast and prints the local catalog if one is missing, so a stale entry
 // here is a one-line fix rather than a confusing mid-run error. Vision
 // capability is checked at startup too, so a text-only model is reported as
-// such instead of silently ignoring the image.
-export const LOCAL_VISION_MODELS = [
+// such instead of silently ignoring an image.
+export const LOCAL_MODELS = [
   { id: "qwen3-vl:2b", provider: "ollama" },
   { id: "qwen3.8:27b", provider: "ollama" },
   { id: "qwen3.5:9b", provider: "ollama" },
@@ -57,14 +57,22 @@ export const LOCAL_VISION_MODELS = [
   { id: "llava:latest", provider: "ollama" },
 ];
 
-// The complex-image dataset runs against local models *and* the hosted vision
-// models, so one run answers both "is this prompt any good?" and "does a small
-// local model hold up?".
+// Every local model installed here is also vision-capable (`ollama show` reports
+// the vision capability for all six), so one list serves both the text and image
+// datasets. Split it if you pull a text-only model -- the vision datasets must
+// not silently include it.
+export const LOCAL_VISION_MODELS = LOCAL_MODELS;
+
+// The lists the datasets actually run: local models first, because they are free
+// and fast, then the hosted ones. `run.enabled_providers` in eval.config.yaml
+// (or ENABLED_PROVIDERS) narrows this at runtime, so a profile of `local` runs
+// only the Ollama entries and a profile of `hosted` runs only the paid ones.
 //
-// Narrow it with ENABLED_PROVIDERS, e.g. `ENABLED_PROVIDERS=ollama` for a fully
-// local, zero-cost run. Set JUDGE_PROVIDER=ollama and JUDGE_MODEL to a local id
-// as well, or the judge still calls Groq and the run still needs a Groq key.
-export const COMPLEX_IMAGE_MODELS = [...LOCAL_VISION_MODELS, ...VISION_MODELS];
+// Keeping local models in the same list -- rather than in a separate exported
+// array a caller has to remember to concatenate -- is what stops a dataset from
+// silently having zero runnable models under a local profile.
+export const CHAT_MODELS = [...LOCAL_MODELS, ...MODELS_UNDER_TEST];
+export const VISION_MODELS_ALL = [...LOCAL_VISION_MODELS, ...VISION_MODELS];
 
 // Not chat-completion models -- included here for reference, but they won't
 // work with this harness as-is since they use different endpoints and
