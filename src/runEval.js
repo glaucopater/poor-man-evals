@@ -8,7 +8,7 @@ import { propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { LangfuseClient } from "@langfuse/client";
 
 import { callModel, listModelIds, normalizeModel, PROVIDERS } from "./providers.js";
-import { judgeOutput, JUDGE_MODEL, JUDGE_PROVIDER } from "./judge.js";
+import { judgeOutput, buildJudgeScore, JUDGE_MODEL, JUDGE_PROVIDER } from "./judge.js";
 import { id as textId, dataset as textDataset } from "./datasets/text.js";
 import { id as imageId, dataset as imageDataset } from "./datasets/image.js";
 import { MODELS_UNDER_TEST, VISION_MODELS } from "./models.js";
@@ -69,14 +69,49 @@ function resolveDataset() {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--dataset") {
-      name = argv[i + 1];
+      const value = argv[i + 1];
+      // Catch a missing value here rather than letting `name` become undefined
+      // and reporting the confusing `Unknown dataset "undefined"`.
+      if (value === undefined || value.startsWith("--")) {
+        console.error(
+          `--dataset requires a value. Available: ${Object.keys(DATASETS).join(", ")}.`
+        );
+        process.exit(1);
+      }
+      name = value;
+      i++; // consume the value so it is not re-read as a positional
     } else if (arg.startsWith("--dataset=")) {
-      name = arg.split("=")[1];
+      name = arg.slice("--dataset=".length);
     } else if (!arg.startsWith("--")) {
       name = arg; // positional: `yarn eval image`
     }
   }
+  if (name === undefined || name === "") {
+    console.error(
+      `--dataset requires a value. Available: ${Object.keys(DATASETS).join(", ")}.`
+    );
+    process.exit(1);
+  }
   return name;
+}
+
+/**
+ * Scores one model output, converting a judge *call* failure into an unscored
+ * result.
+ *
+ * A judge failure (429 after retries, dropped connection) used to reject out of
+ * `runOne` and abort the whole process from `main()` -- discarding every span
+ * already produced, because `flush()` never ran. The model under test did its
+ * job in that case; only the scorer failed, so the run should continue and
+ * report the item as unscored.
+ */
+async function runJudge({ input, output, criteria }) {
+  try {
+    return await judgeOutput({ input, output, criteria });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { score: null, reasoning: `Judge call failed: ${message}`, judgeFailed: true };
+  }
 }
 
 /**
@@ -149,26 +184,22 @@ async function runOne(model, item, run) {
           })
           .end();
 
-        const judged = await judgeOutput({
-          input: item.input,
-          output,
-          criteria: item.criteria,
-        });
+        const judged = await runJudge({ input: item.input, output, criteria: item.criteria });
 
-        span.update({ output: { content: output } });
+        // Only touch the level when something went wrong, so a healthy trace's
+        // payload is unchanged.
+        span.update({
+          output: { content: output },
+          ...(judged.judgeFailed ? { level: "WARNING" } : {}),
+        });
 
         // Observation-level score: the judge scores the model's generation, so
         // the score is attached to that observation (v5's default target for
-        // evaluators) rather than to the trace.
-        langfuse.score.observation(
-          { otelSpan: generation.otelSpan },
-          {
-            name: "llm-judge-score",
-            value: judged.score ?? 0,
-            dataType: "NUMERIC",
-            comment: judged.reasoning,
-          }
-        );
+        // evaluators) rather than to the trace. An unscorable judge result is
+        // written under a different score name -- never as a 0, which would be
+        // indistinguishable from a bad model answer.
+        const score = buildJudgeScore(judged);
+        langfuse.score.observation({ otelSpan: generation.otelSpan }, score);
 
         span.end();
 
@@ -315,43 +346,72 @@ async function main() {
   for (const model of models) {
     for (const item of items) {
       console.log(`Running ${model.id} (${model.provider}) on "${item.id}"...`);
-      const result = await runOne(model, item, run);
-      results.push(result);
+      // runOne already handles model-call and judge-call failures per item.
+      // This is the last line of defence: an unexpected throw (a Langfuse bug,
+      // a bad payload) must not abort the remaining 50-odd runs with every span
+      // still buffered in memory.
+      try {
+        results.push(await runOne(model, item, run));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Unexpected failure on "${item.id}": ${message}`);
+        results.push({ model: model.id, provider: model.provider, itemId: item.id, error: message });
+      }
     }
   }
 
   console.log("\n=== Eval Summary ===");
   for (const r of results) {
-    const label = `${r.model} (${r.provider})`;
+    const label = `[${r.model} (${r.provider})]`;
     if (r.error) {
-      console.log(`[${label}] ${r.itemId}: ERROR - ${r.error}`);
+      console.log(`${label} ${r.itemId}: ERROR - ${r.error}`);
+    } else if (!Number.isFinite(r.judged.score)) {
+      console.log(`${label} ${r.itemId}: UNSCORED - ${r.judged.reasoning}`);
     } else {
-      console.log(
-        `[${label}] ${r.itemId}: score=${r.judged.score ?? "n/a"}/5 - ${r.judged.reasoning}`
-      );
+      console.log(`${label} ${r.itemId}: score=${r.judged.score}/5 - ${r.judged.reasoning}`);
     }
   }
 
   const avgByModel = {};
+  let unscored = 0;
   for (const r of results) {
-    if (r.error || r.judged.score == null) continue;
+    if (r.error) continue;
+    // Report unscored items rather than silently dropping them: a judge that
+    // failed on 8 of 12 cases must not look like a model that scored cleanly.
+    if (!Number.isFinite(r.judged.score)) {
+      unscored++;
+      continue;
+    }
     // Key on id + provider so the same model id served by two providers stays distinct.
     const key = `${r.model} (${r.provider})`;
     avgByModel[key] ??= [];
     avgByModel[key].push(r.judged.score);
   }
-  console.log("\n=== Average score by model ===");
-  for (const [model, scores] of Object.entries(avgByModel)) {
-    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-    console.log(`${model}: ${avg.toFixed(2)}/5 (n=${scores.length})`);
+  const averages = Object.entries(avgByModel);
+  if (averages.length > 0) {
+    console.log("\n=== Average score by model ===");
+    for (const [model, scores] of averages) {
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      console.log(`${model}: ${avg.toFixed(2)}/5 (n=${scores.length})`);
+    }
   }
-
-  // Flush scores and spans before the process exits.
-  await langfuse.flush();
-  await langfuseSpanProcessor.forceFlush();
+  if (unscored > 0) {
+    console.log(
+      `\n${unscored} item(s) could not be scored (judge failure or unparseable ` +
+        `judge output) and were excluded from the averages. They are logged ` +
+        `in Langfuse under the "llm-judge-error" score.`
+    );
+  }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Flush scores and spans in `finally` so a crash part-way through a run still
+// ships the traces collected so far instead of dropping them on exit.
+main()
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await langfuse.flush();
+    await langfuseSpanProcessor.forceFlush();
+  });

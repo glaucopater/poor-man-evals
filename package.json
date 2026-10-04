@@ -8,7 +8,9 @@
     "eval": "node src/runEval.js",
     "eval:text": "node src/runEval.js text",
     "eval:image": "node src/runEval.js image",
-    "verify:langfuse": "node scripts/verify-langfuse-v5.mjs"
+    "test": "node --test test/*.test.mjs",
+    "verify:langfuse": "node scripts/verify-langfuse-v5.mjs",
+    "check": "yarn test && yarn verify:langfuse"
   },
   "license": "MIT",
   "dependencies": {

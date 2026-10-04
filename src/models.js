@@ -13,7 +13,6 @@ export const MODELS_UNDER_TEST = [
   { id: "qwen/qwen3.8-27b", provider: "groq" },
   { id: "openai/gpt-oss-120b", provider: "groq" },
   { id: "openai/gpt-oss-20b", provider: "groq" },
-  { id: "openai/gpt-oss-safeguard-20b", provider: "groq" },
 
   // --- NVIDIA NIM ---
   { id: "deepseek-ai/deepseek-v4.1-flash", provider: "nvidia" },
@@ -48,3 +47,6 @@ export const VISION_MODELS = [
 //       speech-to-text, via POST /openai/v1/audio/transcriptions (takes audio input)
 //   - meta-llama/llama-prompt-guard-2-22m, meta-llama/llama-prompt-guard-2-86m
 //       prompt-injection/jailbreak classifiers, not general chat models
+//   - openai/gpt-oss-safeguard-20b
+//       Groq content-moderation classifier; it has no chat completions API, so
+//       it was previously listed under MODELS_UNDER_TEST where every call 400s

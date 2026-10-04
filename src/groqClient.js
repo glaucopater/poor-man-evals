@@ -1,3 +1,6 @@
+import { normalizeCompletionContent } from "./content.js";
+import { createThrottledFetch, numFromEnv } from "./throttle.js";
+
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models";
 
@@ -7,47 +10,11 @@ const GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models";
 // retry-with-backoff is enough to stay under the limit without needing a
 // full token-bucket implementation. Override via GROQ_MIN_REQUEST_INTERVAL_MS
 // if you're on a higher tier and want to move faster.
-const MIN_REQUEST_INTERVAL_MS = Number(process.env.GROQ_MIN_REQUEST_INTERVAL_MS ?? 2200);
-const MAX_RETRIES = Number(process.env.GROQ_MAX_RETRIES ?? 5);
-
-let lastRequestAt = 0;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function throttle() {
-  const waitMs = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
-  if (waitMs > 0) await sleep(waitMs);
-  lastRequestAt = Date.now();
-}
-
-/**
- * fetch() wrapper that self-throttles to respect Groq's low free-tier RPM,
- * and retries on 429 (rate limited) with exponential backoff -- honoring
- * the Retry-After header when Groq sends one.
- */
-async function groqFetch(url, options) {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    await throttle();
-    const res = await fetch(url, options);
-
-    if (res.status !== 429) return res;
-    if (attempt === MAX_RETRIES) return res; // give up; let the caller surface the error body
-
-    const retryAfterHeader = res.headers.get("retry-after");
-    const backoffMs = retryAfterHeader
-      ? Number(retryAfterHeader) * 1000
-      : Math.min(30_000, 1000 * 2 ** attempt);
-
-    console.warn(
-      `Rate limited by Groq (429). Waiting ${(backoffMs / 1000).toFixed(1)}s before retry ${
-        attempt + 1
-      }/${MAX_RETRIES}...`
-    );
-    await sleep(backoffMs);
-  }
-}
+const groqFetch = createThrottledFetch({
+  label: "Groq",
+  minIntervalMs: numFromEnv("GROQ_MIN_REQUEST_INTERVAL_MS", 2200),
+  maxRetries: numFromEnv("GROQ_MAX_RETRIES", 5),
+});
 
 /**
  * Calls the Groq chat completions endpoint (OpenAI-compatible).
@@ -97,7 +64,7 @@ export async function callGroq({
   const data = await res.json();
 
   return {
-    content: data.choices?.[0]?.message?.content ?? "",
+    content: normalizeCompletionContent(data),
     usage: data.usage ?? {},
     raw: data,
   };

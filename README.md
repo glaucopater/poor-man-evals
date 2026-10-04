@@ -17,6 +17,8 @@ without building your own UI.
 ```
 src/
   instrumentation.js   Boots the Langfuse OpenTelemetry span processor (import first)
+  throttle.js           Shared per-provider throttle + 429 retry-with-backoff
+  content.js            Normalizes an OpenAI-compatible response into plain text
   groqClient.js         Thin wrapper around Groq's OpenAI-compatible chat completions API
   nvidiaClient.js       Same wrapper shape for NVIDIA NIM's OpenAI-compatible API
   providers.js           Maps a provider name ("groq", "nvidia") to its client (edit to add a provider)
@@ -25,6 +27,8 @@ src/
   datasets/image.js       Image prompts (base64 data URLs) + criteria (edit this)
   judge.js                LLM-as-judge: scores each output 1-5 against the criteria
   runEval.js              Orchestrates: for each model x each dataset item, run + score + log
+test/                     Unit tests (node --test), no provider calls
+scripts/                  verify-langfuse-v5.mjs: end-to-end check against a mock Langfuse
 ```
 
 For every `(model, dataset item)` pair, `runEval.js`:
@@ -33,6 +37,14 @@ For every `(model, dataset item)` pair, `runEval.js`:
 3. Calls the judge model to score the output 1-5 against the item's criteria.
 4. Attaches the score to the generation observation via `langfuse.score.observation(...)` (observation-level scores are what v4 evaluators target).
 5. Prints a summary table, including average score per model.
+
+Failures are scoped per item and never abort the run: a model error or a judge
+error marks just that item and the loop continues. If the judge cannot produce a
+verdict (call failed, or unparseable JSON), the item is recorded as **UNSCORED**
+under a separate `llm-judge-error` score and excluded from the averages, rather
+than being written as a numeric `0` — which would be indistinguishable from a
+genuinely bad model answer. Spans and scores are flushed in a `finally`, so even
+a mid-run crash ships the traces collected so far.
 
 Open your Langfuse project afterwards to see traces per run and compare models/scores in the UI.
 
@@ -101,17 +113,17 @@ To run both datasets in one go: `yarn eval:text && yarn eval:image`.
 Console output looks like:
 
 ```
-Running qwen/qwen3.6-27b (groq) on "fib-ocaml"...
+Running qwen/qwen3.8-27b (groq) on "fib-ocaml"...
 Running meta/llama-3.1-8b-instruct (nvidia) on "fib-ocaml"...
-Running qwen/qwen3.6-27b (groq) on "capital-of-france"...
+Running qwen/qwen3.8-27b (groq) on "capital-of-france"...
 
 === Eval Summary ===
-[qwen/qwen3.6-27b (groq)] fib-ocaml: score=5/5 - Provides correct, idiomatic OCaml...
+[qwen/qwen3.8-27b (groq)] fib-ocaml: score=5/5 - Provides correct, idiomatic OCaml...
 [meta/llama-3.1-8b-instruct (nvidia)] fib-ocaml: score=4/5 - Recursive but no memoization...
-[qwen/qwen3.6-27b (groq)] capital-of-france: score=5/5 - Correctly states Paris...
+[qwen/qwen3.8-27b (groq)] capital-of-france: score=5/5 - Correctly states Paris...
 
 === Average score by model ===
-qwen/qwen3.6-27b (groq): 4.67/5 (n=3)
+qwen/qwen3.8-27b (groq): 4.67/5 (n=3)
 meta/llama-3.1-8b-instruct (nvidia): 4.00/5 (n=3)
 ```
 
@@ -128,16 +140,36 @@ console's Limits page). NVIDIA NIM limits vary by plan and model. Since this
 harness makes one completion call + one judge call per dataset item, it's easy
 to hit a 429 once you scale up models or the dataset.
 
-To handle this, each client (`groqClient.js`, `nvidiaClient.js`):
+To handle this, each client (`groqClient.js`, `nvidiaClient.js`) shares the
+throttle in `src/throttle.js`:
 - Waits at least `GROQ_MIN_REQUEST_INTERVAL_MS` / `NVIDIA_MIN_REQUEST_INTERVAL_MS`
   (default 2200ms each) between every request to that provider, including judge calls.
 - On a 429, retries with exponential backoff (honoring the `Retry-After`
-  header when the provider sends one) up to `GROQ_MAX_RETRIES` /
-  `NVIDIA_MAX_RETRIES` times (default 5).
+  header when the provider sends one — both the delay-seconds and the
+  HTTP-date form) up to `GROQ_MAX_RETRIES` / `NVIDIA_MAX_RETRIES` times
+  (default 5).
+- Retries dropped connections (`ECONNRESET` etc.) on the same backoff, so a
+  single network blip doesn't kill the run.
+- Non-numeric values in these env vars fall back to the defaults instead of
+  becoming `NaN`.
 
 If you're still getting rate limited, either raise the relevant
 `*_MIN_REQUEST_INTERVAL_MS` in `.env`, trim `src/models.js` / the dataset, or
 move to a paid tier and lower the interval.
+
+## Tests
+
+```bash
+yarn test              # unit tests: throttle/backoff, judge parsing, score building
+yarn verify:langfuse   # end-to-end against a mock Langfuse server (no provider calls)
+yarn check             # both
+```
+
+`yarn test` needs no API keys: `test/helpers/env.mjs` sets placeholder
+credentials and every test stubs `globalThis.fetch`. `yarn verify:langfuse` runs
+two scenarios — a healthy judge, and a judge returning unparseable output — and
+asserts on the HTTP traffic that actually left the process, including that a
+total judge failure still exports every trace.
 
 ## Troubleshooting
 
@@ -159,7 +191,18 @@ Meanwhile, take NVIDIA out of the run without touching `src/models.js` by settin
 `ENABLED_PROVIDERS=groq` in `.env`. Re-add `nvidia` once your key works.
 
 **`Unknown dataset "..."`** — the id must match a `dataset id` export in
-`src/datasets/`. Run `yarn eval:text` or `yarn eval:image`.
+`src/datasets/`. Run `yarn eval:text` or `yarn eval:image`. Note that
+`node src/runEval.js --dataset` with no value exits immediately instead of
+reporting `Unknown dataset "undefined"`.
+
+## Known limitations
+
+- **The judge never sees the image.** Image items are scored from the model's
+  *text* answer only — `judgeOutput` receives the prompt, the response and the
+  criteria, but not the base64 image. Vision scores are therefore grades on the
+  model's description, not on whether it read the image correctly. Pointing the
+  judge at a vision-capable model and forwarding `item.image` is the fix if that
+  matters for your eval.
 
 ## Notes / next steps
 

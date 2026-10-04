@@ -33,6 +33,11 @@ Respond with ONLY a JSON object, no markdown fences, no extra text, in exactly t
 /**
  * Runs an LLM-as-judge scoring pass over a single model output.
  *
+ * Throws if the judge call itself fails (network error, exhausted retries);
+ * callers are expected to handle that as an *unscored* result rather than
+ * treating it as a score of 0. Parse failures are handled here and returned as
+ * `{ score: null }`.
+ *
  * @param {object} params
  * @param {string} params.input - the original prompt
  * @param {string} params.output - the model's response
@@ -68,4 +73,36 @@ export async function judgeOutput({ input, output, criteria }) {
       reasoning: `Failed to parse judge output (${err.message}). Raw: ${content}`,
     };
   }
+}
+
+/**
+ * Builds the Langfuse score payload for a judge result.
+ *
+ * A judge that could not produce a score (bad JSON, call failure) is reported
+ * under its own categorical score name instead of being coerced to `0`. Writing
+ * 0 would be actively misleading: it is indistinguishable from a genuinely
+ * terrible model output in both the Langfuse Scores view and this harness's
+ * own average, quietly dragging a model's mean down for a harness-side reason.
+ *
+ * @param {{score: number|null, reasoning: string}} judged
+ * @returns {{name: string, value: number|string, dataType: string, comment?: string}}
+ */
+export function buildJudgeScore(judged) {
+  // Number.isFinite, not `== null`: NaN == null is false, so a non-numeric score
+  // would otherwise be written as a NUMERIC value.
+  if (!Number.isFinite(judged.score)) {
+    // Langfuse categorical values are short; keep the raw dump in the comment.
+    return {
+      name: "llm-judge-error",
+      value: "unscored",
+      dataType: "CATEGORICAL",
+      comment: judged.reasoning,
+    };
+  }
+  return {
+    name: "llm-judge-score",
+    value: judged.score,
+    dataType: "NUMERIC",
+    comment: judged.reasoning,
+  };
 }

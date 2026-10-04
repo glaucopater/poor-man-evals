@@ -54,6 +54,9 @@ process.argv.push("image"); // smallest dataset: 1 groq vision model x 3 items
 // ------------------------------------------------- stub the provider (model) calls
 const allIds = [];
 const modelCalls = [];
+// Flipped before the resilience scenario so the judge returns prose instead of
+// JSON, exercising the unscored path.
+let judgeGarbage = false;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, options = {}) => {
   // Langfuse's own client uses global fetch -- let that traffic reach the mock.
@@ -74,17 +77,13 @@ globalThis.fetch = async (url, options = {}) => {
   const isProbe = messages.includes('"ping"') && !isJudge;
   modelCalls.push({ model: payload.model, isJudge, isProbe });
 
+  const judgeContent = judgeGarbage
+    ? "Sure! I'd say that's a pretty solid answer overall."
+    : JSON.stringify({ score: 4, reasoning: "stubbed judge score" });
+
   return new Response(
     JSON.stringify({
-      choices: [
-        {
-          message: {
-            content: isJudge
-              ? JSON.stringify({ score: 4, reasoning: "stubbed judge score" })
-              : "stubbed model output",
-          },
-        },
-      ],
+      choices: [{ message: { content: isJudge ? judgeContent : "stubbed model output" } }],
       usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
     }),
     { status: 200, headers: { "content-type": "application/json" } }
@@ -102,27 +101,72 @@ allIds.push(
   JUDGE_MODEL
 );
 
-let sessionId = null;
-let finished = false;
+// Run-completion detection. Keying only off the "=== Average score by model ===
+// header is brittle: that header is now suppressed when nothing scored, so a
+// fully-unscored run would never be seen as finished. Detect the end of the
+// summary if it printed, and otherwise fall back to the HTTP stream going quiet.
+function watchForCompletion(state) {
+  const realLog = console.log;
+  console.log = (...args) => {
+    const line = args.join(" ");
+    if (line.startsWith("Langfuse session: ")) state.sessionId = line.slice("Langfuse session: ".length);
+    if (line.startsWith("Running ")) state.started = true;
+    if (line.includes("=== Average score by model ===") || line.includes("could not be scored")) {
+      state.finished = true;
+    }
+    realLog(...args);
+  };
+  return () => {
+    console.log = realLog;
+  };
+}
+
 const realLog = console.log;
-console.log = (...args) => {
-  const line = args.join(" ");
-  if (line.startsWith("Langfuse session: ")) sessionId = line.slice("Langfuse session: ".length);
-  if (line.includes("=== Average score by model ===")) finished = true;
-  realLog(...args);
-};
 
-await import("../src/runEval.js");
+/**
+ * Runs the harness end to end and returns only the HTTP traffic it produced.
+ *
+ * `?scenario=N` makes each import a distinct module record, so runEval.js's
+ * self-executing main() runs again for the resilience scenario below.
+ */
+async function runScenario({ judgeGarbage = false } = {}) {
+  const from = captured.length;
+  modelCalls.length = 0;
+  const state = { sessionId: null, started: false, finished: false };
+  const restoreLog = watchForCompletion(state);
 
-const deadline = Date.now() + 90_000;
-while (!finished && Date.now() < deadline) await new Promise((r) => setTimeout(r, 250));
-await new Promise((r) => setTimeout(r, 3000)); // let flush() + forceFlush() land
-console.log = realLog;
+  await import(`../src/runEval.js?scenario=${judgeGarbage ? "judge-garbage" : "happy"}`);
+
+  const deadline = Date.now() + 90_000;
+  let quietTicks = 0;
+  let seen = captured.length;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (state.finished) break;
+    if (captured.length === seen) {
+      if (state.started && ++quietTicks >= 12) break; // 3s of silence after work began
+    } else {
+      quietTicks = 0;
+      seen = captured.length;
+    }
+  }
+  await new Promise((r) => setTimeout(r, 3000)); // let flush() + forceFlush() land
+  restoreLog();
+
+  return {
+    traffic: captured.slice(from),
+    sessionId: state.sessionId,
+    finished: state.finished || state.started,
+    modelCalls: [...modelCalls],
+  };
+}
+
+const happy = await runScenario();
 
 // ------------------------------------------------------------------- assertions
-const otel = captured.filter((r) => r.path.includes("/otel/"));
-const ingestion = captured.filter((r) => r.path.includes("/ingestion"));
-const media = captured.filter((r) => r.path.includes("/media"));
+const otel = happy.traffic.filter((r) => r.path.includes("/otel/"));
+const ingestion = happy.traffic.filter((r) => r.path.includes("/ingestion"));
+const media = happy.traffic.filter((r) => r.path.includes("/media"));
 const byPath = (list) => list.map((r) => `${r.path}(${r.body.length}b)`).join(", ");
 const attr = (span, key) => {
   const raw = span.attributes?.find((a) => a.key === key)?.value;
@@ -133,7 +177,7 @@ const attr = (span, key) => {
   return JSON.stringify(raw);
 };
 
-check(finished, "eval run completed", byPath(captured));
+check(happy.finished, "eval run completed", byPath(happy.traffic));
 check(otel.length > 0, "spans exported to the v4 OTLP path /otel/v1/traces", byPath(otel));
 check(
   otel.every((r) => (r.headers.authorization || "").startsWith("Basic ")),
@@ -154,9 +198,9 @@ check(spans.every((s) => s.scope === "langfuse-sdk"), "all spans from the langfu
 
 // v5: correlating attributes must be on the root AND every child observation.
 check(
-  spans.every((s) => attr(s, "session.id") === sessionId),
+  spans.every((s) => attr(s, "session.id") === happy.sessionId),
   "session id propagated to root and child observations",
-  sessionId ?? "none"
+  happy.sessionId ?? "none"
 );
 check(
   spans.every((s) => String(attr(s, "langfuse.trace.name") || "").startsWith("eval:qwen/")),
@@ -229,9 +273,55 @@ check(
 );
 check(new Set(scoreEvents.map((s) => s.observationId)).size === 3, "scores attached to distinct observations");
 
-const underTest = modelCalls.filter((c) => !c.isJudge && !c.isProbe);
+const underTest = happy.modelCalls.filter((c) => !c.isJudge && !c.isProbe);
 check(underTest.length === 3, "model called once per item", `calls=${underTest.length}`);
-check(modelCalls.filter((c) => c.isJudge).length === 3, "judge called once per item");
+check(happy.modelCalls.filter((c) => c.isJudge).length === 3, "judge called once per item");
+
+// ------------------------------------------------- resilience: judge returns junk
+// Regression guard. Previously a judge that could not produce a score escaped
+// runOne, aborted main() and skipped flush() -- so one bad judge response threw
+// away every trace in the run. The harness must finish, still export all three
+// traces, and record the failures as "llm-judge-error" rather than a numeric 0
+// that would be indistinguishable from a bad model answer.
+realLog("\n--- resilience scenario: judge returns unparseable output ---");
+judgeGarbage = true;
+const degraded = await runScenario({ judgeGarbage: true });
+
+const degradedSpans = degraded.traffic
+  .filter((r) => r.path.includes("/otel/"))
+  .flatMap((r) => JSON.parse(r.body.toString("utf8")).resourceSpans.flatMap((rs) =>
+    rs.scopeSpans.flatMap((ss) => ss.spans)));
+const degradedScores = [];
+for (const r of degraded.traffic.filter((x) => x.path.includes("/ingestion"))) {
+  try {
+    const parsed = JSON.parse(r.body.toString("utf8"));
+    for (const batch of parsed.batch ?? []) if (batch.type === "score-create") degradedScores.push(batch.body);
+  } catch {
+    /* not JSON */
+  }
+}
+
+check(degraded.finished, "run completes even when every judge response is unparseable");
+check(degradedSpans.length === 6, "all 3 traces still exported after judge failure", `spans=${degradedSpans.length}`);
+check(degraded.modelCalls.filter((c) => c.isJudge).length === 3, "judge still attempted once per item");
+check(
+  degradedScores.length === 3 && degradedScores.every((s) => s.name === "llm-judge-error"),
+  "judge failures logged as llm-judge-error",
+  `names=${[...new Set(degradedScores.map((s) => s.name))].join(",")}`
+);
+check(
+  degradedScores.every((s) => typeof s.value === "string" && !/^\d+$/.test(String(s.value))),
+  "no numeric 0 written for an unscored item",
+  `values=${degradedScores.map((s) => s.value).join(",")}`
+);
+check(
+  degradedScores.every((s) => /Failed to parse judge output/.test(String(s.comment))),
+  "score comment carries the parse failure reason"
+);
+check(
+  degradedScores.every((s) => degradedSpans.some((sp) => sp.spanId === s.observationId)),
+  "error score still attached to its generation observation"
+);
 
 mock.close();
 realLog("\n" + (failures.length === 0 ? "ALL CHECKS PASSED" : `FAILED (${failures.length}): ${failures.join("; ")}`));
