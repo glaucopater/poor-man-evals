@@ -86,10 +86,21 @@ Two files, each with one job:
 | `eval.config.yaml` | all settings and profiles | yes |
 | `eval.config.example.yaml` | the documented template | **no** — commit it |
 
+**The rule: `.env` is for secrets only.** API keys and credentials, nothing else.
+Every non-secret setting belongs in `eval.config.yaml`. The test is whether you
+would be comfortable pasting the file into a chat window — if it contains
+`ENABLED_PROVIDERS` or `JUDGE_MODEL`, it is in the wrong place.
+
 Keeping them separate is what makes `eval.config.yaml` safe to commit, so it can
 be reviewed and shared like code. Neither file is required: with no config file
-the harness falls back to built-in defaults and reads everything from `.env`, so
-nothing breaks if you only have one.
+the harness falls back to built-in defaults, so nothing breaks if you only have
+`.env`.
+
+`.env` is also the escape hatch for variables this project does not model.
+`eval.config.yaml` has a *closed* schema — an unknown key is a hard error, which
+is what catches `max_retrries` — so a setting the Langfuse SDK grows in a future
+release has nowhere to go in the YAML. It goes in `.env`, and `dotenv` picks it
+up. That is the one deliberate exception to the closed schema.
 
 Fill in `.env`:
 
