@@ -1,7 +1,40 @@
-import { callModel, DEFAULT_PROVIDER } from "./providers/index.js";
+import { callModel, DEFAULT_PROVIDER, providersSupporting } from "./providers/index.js";
 
 export const JUDGE_PROVIDER = process.env.JUDGE_PROVIDER || DEFAULT_PROVIDER;
 export const JUDGE_MODEL = process.env.JUDGE_MODEL || "openai/gpt-oss-20b";
+
+/**
+ * Output budget for one verdict.
+ *
+ * This was 300, which is only enough for a model that answers immediately. A
+ * reasoning model spends its whole budget thinking out loud and is then cut off
+ * before it emits the verdict -- a truncated response is not parseable JSON, so
+ * the item silently scored as UNSCORED. Measured on local Ollama with the real
+ * judge prompt: gemma4:12b burned all 300 tokens and produced nothing usable.
+ * 512 is comfortable headroom for the ~40-150 token verdict a judge actually
+ * needs once thinking is suppressed (see JUDGE_THINK below).
+ */
+export const JUDGE_MAX_COMPLETION_TOKENS = Number(process.env.JUDGE_MAX_COMPLETION_TOKENS ?? 512);
+
+/**
+ * Whether to let the judge think before answering.
+ *
+ * A judge needs a terse verdict, not a chain of reasoning -- the reasoning is
+ * invisible to the reader and burns the output budget. Measured on local Ollama
+ * with the real judge prompt and the same 1000-token budget:
+ *
+ *   gemma4:12b   thinking on  -> 1000 tokens, still unparseable
+ *   gemma4:12b   thinking off -> 39 tokens, valid verdict
+ *   qwen3.8:27b  thinking on  ->  845 tokens, valid verdict
+ *   qwen3.8:27b  thinking off ->  62 tokens, valid verdict
+ *
+ * Only sent to providers that implement the switch (today: Ollama); the others
+ * have no such control. Override with JUDGE_THINK=true if you have a judge that
+ * genuinely reasons better out loud -- at the cost of a larger budget and
+ * slower verdicts.
+ */
+const JUDGE_THINK = process.env.JUDGE_THINK ? process.env.JUDGE_THINK === "true" : false;
+const JUDGE_SUPPORTS_THINK = providersSupporting("think").includes(JUDGE_PROVIDER);
 
 const buildJudgePrompt = (input, output, criteria) => `You are a strict, impartial evaluator of LLM outputs.
 
@@ -45,13 +78,27 @@ Respond with ONLY a JSON object, no markdown fences, no extra text, in exactly t
  * @returns {Promise<{score: number|null, reasoning: string}>}
  */
 export async function judgeOutput({ input, output, criteria }) {
-  const { content } = await callModel({
+  const { content, truncated } = await callModel({
     provider: JUDGE_PROVIDER,
     model: JUDGE_MODEL,
     messages: [{ role: "user", content: buildJudgePrompt(input, output, criteria) }],
     temperature: 0,
-    max_completion_tokens: 300,
+    max_completion_tokens: JUDGE_MAX_COMPLETION_TOKENS,
+    ...(JUDGE_SUPPORTS_THINK ? { think: JUDGE_THINK } : {}),
   });
+
+  // Distinguish "the judge said something unparseable" from "the judge ran out
+  // of budget", which have completely different fixes (a stricter prompt vs. a
+  // larger JUDGE_MAX_COMPLETION_TOKENS) and otherwise look identical.
+  if (truncated) {
+    return {
+      score: null,
+      reasoning:
+        `Judge response was truncated at ${JUDGE_MAX_COMPLETION_TOKENS} tokens before it ` +
+        `finished, so no verdict could be read. Raise JUDGE_MAX_COMPLETION_TOKENS, or set ` +
+        `JUDGE_THINK=false if the judge is reasoning out loud. Raw: ${content}`,
+    };
+  }
 
   try {
     const cleaned = content

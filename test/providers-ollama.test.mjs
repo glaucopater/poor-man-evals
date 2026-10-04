@@ -348,3 +348,102 @@ test("callModel: no done_reason at all is reported as not-truncated, not guessed
     globalThis.fetch = realFetch;
   }
 });
+
+// ------------------------------------------------------------- judge on Ollama
+
+/** Loads a fresh judge.js with the given env, since it reads config at import. */
+async function loadJudge(env) {
+  const saved = {};
+  for (const [k, v] of Object.entries(env)) {
+    saved[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  const module = await import(`../src/judge.js?t=${Math.random()}`);
+  return {
+    ...module,
+    restore: () => {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    },
+  };
+}
+
+async function captureJudgeCall(env, reply) {
+  const realFetch = globalThis.fetch;
+  let sent = null;
+  globalThis.fetch = async (url, options = {}) => {
+    sent = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify(reply ?? { message: { content: '{"score":4,"reasoning":"ok"}' }, done_reason: "stop" }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+  const mod = await loadJudge(env);
+  try {
+    const judged = await mod.judgeOutput({ input: "i", output: "o", criteria: "c" });
+    return { sent, judged, mod };
+  } finally {
+    globalThis.fetch = realFetch;
+    mod.restore();
+  }
+}
+
+test("judge: suppresses thinking on Ollama and uses a workable budget", async () => {
+  // The regression this guards: with thinking on, the judge burned its whole
+  // output budget reasoning out loud, got truncated at `length`, and every item
+  // scored UNSCORED for a reason that had nothing to do with the model.
+  const { sent, judged, mod } = await captureJudgeCall({
+    JUDGE_PROVIDER: "ollama",
+    JUDGE_MODEL: "qwen3.8:27b",
+    JUDGE_THINK: undefined,
+    JUDGE_MAX_COMPLETION_TOKENS: undefined,
+  });
+
+  assert.equal(sent.think, false, "judge must not think out loud by default");
+  assert.equal(sent.options.num_predict, 512, "default budget raised from 300");
+  assert.equal(judged.score, 4);
+  assert.equal(mod.JUDGE_MAX_COMPLETION_TOKENS, 512);
+});
+
+test("judge: JUDGE_THINK=true opts back into reasoning", async () => {
+  const { sent } = await captureJudgeCall({
+    JUDGE_PROVIDER: "ollama",
+    JUDGE_MODEL: "qwen3.8:27b",
+    JUDGE_THINK: "true",
+  });
+  assert.equal(sent.think, true);
+});
+
+test("judge: JUDGE_MAX_COMPLETION_TOKENS is honoured", async () => {
+  const { sent } = await captureJudgeCall({
+    JUDGE_PROVIDER: "ollama",
+    JUDGE_MODEL: "qwen3.8:27b",
+    JUDGE_MAX_COMPLETION_TOKENS: "1500",
+  });
+  assert.equal(sent.options.num_predict, 1500);
+});
+
+test("judge: omits `think` entirely for providers without that switch", async () => {
+  const { sent } = await captureJudgeCall({
+    JUDGE_PROVIDER: "groq",
+    JUDGE_MODEL: "openai/gpt-oss-20b",
+    JUDGE_THINK: undefined,
+  });
+  assert.ok(!("think" in sent), "groq has no thinking control; do not invent one");
+});
+
+test("judge: a truncated verdict is reported as truncation, not as bad JSON", async () => {
+  // These have different fixes (raise the budget / disable thinking vs. fix the
+  // prompt), so they must not collapse into the same "failed to parse" message.
+  const { judged } = await captureJudgeCall(
+    { JUDGE_PROVIDER: "ollama", JUDGE_MODEL: "qwen3.8:27b" },
+    { message: { content: "We are given a task to" }, done_reason: "length" }
+  );
+  assert.equal(judged.score, null);
+  assert.match(judged.reasoning, /truncated at 512 tokens/);
+  assert.match(judged.reasoning, /JUDGE_MAX_COMPLETION_TOKENS/);
+  assert.doesNotMatch(judged.reasoning, /Failed to parse/);
+});

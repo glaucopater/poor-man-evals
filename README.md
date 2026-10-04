@@ -144,7 +144,45 @@ models a good baseline to compare hosted ones against.
 
 ```bash
 # fully local, zero-cost: no Groq or NVIDIA call at all
-ENABLED_PROVIDERS=ollama JUDGE_PROVIDER=ollama JUDGE_MODEL=qwen3-vl:2b yarn eval:complex
+ENABLED_PROVIDERS=ollama JUDGE_PROVIDER=ollama JUDGE_MODEL=qwen3.8:27b yarn eval:complex
+```
+
+### Picking a local judge
+
+The judge is a separate model from the one under test, and it has different
+requirements: it needs a **terse verdict**, not a chain of reasoning. That makes
+"just use a bigger local model" the wrong instinct — measured on local Ollama
+with the real judge prompt and the same 1000-token budget:
+
+| judge | thinking | tokens used | verdict |
+|---|---|---|---|
+| `gemma4:12b` | on | 1000 (all of it) | **unparseable** |
+| `gemma4:12b` | off | 39 | valid, score 5 |
+| `qwen3.8:27b` | on | 845 | valid, score 3 |
+| `qwen3.8:27b` | off | 62 | valid, score 4 |
+
+A thinking model spends its output budget reasoning out loud, gets truncated
+before emitting the verdict, and a truncated response is not parseable JSON — so
+every item scored `UNSCORED` for a reason that had nothing to do with the model
+under test. The harness therefore sends `think: false` to providers that support
+it (Ollama) and raises the verdict budget from 300 to 512 tokens, configurable via
+`JUDGE_MAX_COMPLETION_TOKENS`. `JUDGE_THINK=true` opts back in.
+
+`gemma4:12b` is faster and needs less VRAM; `qwen3.8:27b` is the stronger judge.
+Both fit a 24 GB card (7.6 GB and 17.7 GB at Q4_K_M).
+
+Note that the two disagree slightly on the same input (score 4 vs 5), and
+`qwen3.8:27b` scores differently with thinking on vs off (3 vs 4). Judge scores
+are sensitive to judge configuration — treat the judge as a fixed part of your
+setup and change it deliberately, not incidentally.
+
+A truncated judge is now reported distinctly from an unparseable one, because
+they have different fixes:
+
+```
+UNSCORED - Judge response was truncated at 512 tokens before it finished,
+so no verdict could be read. Raise JUDGE_MAX_COMPLETION_TOKENS, or set
+JUDGE_THINK=false if the judge is reasoning out loud.
 ```
 
 Ollama needs to be running (`ollama serve`) with the models in
