@@ -51,12 +51,36 @@ process.env.GROQ_MIN_REQUEST_INTERVAL_MS = "0";
 process.env.NVIDIA_MIN_REQUEST_INTERVAL_MS = "0";
 process.argv.push("image"); // smallest dataset: 1 groq vision model x 3 items
 
+/** A minimal object satisfying src/datasets/complex_prompt.md's schema. */
+const CONFORMANT_TAIJI = {
+  summary: "a person standing in a wide stance",
+  visible_posture: {
+    stance: "wide", weight_distribution: "even", foot_position: "shoulder width",
+    leg_position: "bent", torso_alignment: "upright", head_and_gaze: "forward",
+    left_arm_and_hand: "raised", right_arm_and_hand: "low", overall_alignment: "stable",
+  },
+  visible_movement: {
+    direction: "left", weight_shift: "to the left leg", stepping_motion: "none visible",
+    arm_motion: "extended", hand_motion: "open", torso_motion: "rotating",
+    likely_phase: "transition",
+  },
+  taiji_context: {
+    possible_posture_or_transition: "warding", apparent_intent: "balancing",
+    technical_points: ["relaxed shoulders"],
+  },
+  limitations: ["single frame"],
+  confidence: 0.7,
+};
+
 // ------------------------------------------------- stub the provider (model) calls
 const allIds = [];
 const modelCalls = [];
 // Flipped before the resilience scenario so the judge returns prose instead of
 // JSON, exercising the unscored path.
 let judgeGarbage = false;
+// When true the model under test returns a schema-conformant JSON object
+// wrapped in a ```json fence, which is what the complex-image dataset expects.
+let modelReturnsSchemaJson = false;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, options = {}) => {
   // Langfuse's own client uses global fetch -- let that traffic reach the mock.
@@ -75,15 +99,19 @@ globalThis.fetch = async (url, options = {}) => {
   const isJudge = messages.includes("impartial evaluator");
   // The startup availability check fires a "ping" completion per provider.
   const isProbe = messages.includes('"ping"') && !isJudge;
-  modelCalls.push({ model: payload.model, isJudge, isProbe });
+  modelCalls.push({ model: payload.model, isJudge, isProbe, payload });
 
   const judgeContent = judgeGarbage
     ? "Sure! I'd say that's a pretty solid answer overall."
     : JSON.stringify({ score: 4, reasoning: "stubbed judge score" });
 
+  const modelContent = modelReturnsSchemaJson
+    ? "```json\n" + JSON.stringify(CONFORMANT_TAIJI) + "\n```"
+    : "stubbed model output";
+
   return new Response(
     JSON.stringify({
-      choices: [{ message: { content: isJudge ? judgeContent : "stubbed model output" } }],
+      choices: [{ message: { content: isJudge ? judgeContent : modelContent } }],
       usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
     }),
     { status: 200, headers: { "content-type": "application/json" } }
@@ -129,13 +157,18 @@ const realLog = console.log;
  * `?scenario=N` makes each import a distinct module record, so runEval.js's
  * self-executing main() runs again for the resilience scenario below.
  */
-async function runScenario({ judgeGarbage = false } = {}) {
+async function runScenario({ dataset = "image", schemaJson = false } = {}) {
   const from = captured.length;
   modelCalls.length = 0;
   const state = { sessionId: null, started: false, finished: false };
   const restoreLog = watchForCompletion(state);
 
-  await import(`../src/runEval.js?scenario=${judgeGarbage ? "judge-garbage" : "happy"}`);
+  // runEval resolves its dataset from argv at call time; rewrite it so each
+  // scenario can target a different one.
+  process.argv = [process.argv[0], process.argv[1], dataset];
+  modelReturnsSchemaJson = schemaJson;
+
+  await import(`../src/runEval.js?scenario=${dataset}-${judgeGarbage ? "judge-garbage" : "happy"}`);
 
   const deadline = Date.now() + 90_000;
   let quietTicks = 0;
@@ -321,6 +354,71 @@ check(
 check(
   degradedScores.every((s) => degradedSpans.some((sp) => sp.spanId === s.observationId)),
   "error score still attached to its generation observation"
+);
+
+// -------------------------------------------- complex-image dataset (from disk)
+// The structured-output path: a real binary JPEG read from src/assets/images/,
+// base64-encoded at load time, sent as an OpenAI content part, with the
+// captured prompt's JSON schema mapped onto `response_format` and scored
+// deterministically as well as by the judge.
+realLog("\n--- complex-image dataset: binary image + structured output ---");
+judgeGarbage = false;
+const complex = await runScenario({ dataset: "complex-image", schemaJson: true });
+
+const complexChat = complex.modelCalls.find((c) => !c.isJudge && !c.isProbe)?.payload;
+const content = complexChat?.messages?.[0]?.content;
+const imagePart = Array.isArray(content) ? content.find((p) => p.type === "image_url") : null;
+const imageUrl = imagePart?.image_url?.url ?? "";
+
+check(complex.finished, "complex-image run completes");
+check(Array.isArray(content) && content.length === 2, "prompt sent as text + image parts");
+check(
+  imageUrl.startsWith("data:image/jpeg;base64,"),
+  "binary JPEG read from disk and sent as a base64 data URL",
+  imageUrl.slice(0, 32)
+);
+check(imageUrl.length > 700_000, "full-resolution image attached, not downscaled", `${imageUrl.length} chars`);
+check(!imageUrl.includes("video-to-practice"), "stale external path from the captured request ignored");
+check(complexChat?.response_format?.type === "json_schema", "prompt's JSON schema mapped to response_format");
+check(
+  complexChat?.response_format?.json_schema?.schema?.properties?.visible_posture?.type === "object",
+  "schema body forwarded verbatim"
+);
+check(complexChat?.temperature === 0.8, "per-item temperature applied", String(complexChat?.temperature));
+check(
+  complexChat?.max_completion_tokens === 8192,
+  "Ollama num_predict mapped to max_completion_tokens",
+  String(complexChat?.max_completion_tokens)
+);
+check(
+  complexChat?.response_format == null || complexChat?.repeat_penalty === undefined,
+  "unmappable repeat_penalty not sent to the provider"
+);
+
+const complexScores = complex.traffic
+  .filter((r) => r.path.includes("/ingestion"))
+  .flatMap((r) => {
+    try {
+      return (JSON.parse(r.body).batch ?? []).filter((b) => b.type === "score-create").map((b) => b.body);
+    } catch {
+      return [];
+    }
+  });
+const schemaScores = complexScores.filter((s) => s.name === "json-schema-valid");
+check(schemaScores.length === 1, "deterministic json-schema-valid score written", `n=${schemaScores.length}`);
+check(
+  schemaScores.every((s) => s.value === 1),
+  "fenced-but-schema-conformant output scores 1",
+  JSON.stringify(schemaScores.map((s) => s.value))
+);
+check(
+  complexScores.some((s) => s.name === "llm-judge-score"),
+  "LLM judge score still written alongside the deterministic one"
+);
+const complexOtel = complex.traffic.filter((r) => r.path.includes("/otel/"));
+check(
+  complexOtel.every((r) => !r.body.toString("utf8").includes("data:image/jpeg;base64,")),
+  "inline base64 stripped from complex-image span payloads"
 );
 
 mock.close();

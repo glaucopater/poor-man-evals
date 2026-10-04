@@ -24,6 +24,8 @@ const nvidiaFetch = createThrottledFetch({
  * @param {number} [params.temperature]
  * @param {number} [params.max_tokens]
  * @param {number} [params.top_p]
+ * @param {object} [params.response_format] - OpenAI structured-output spec,
+ *   e.g. `{type: "json_schema", json_schema: {name, strict, schema}}`.
  * @returns {Promise<{content: string, usage: object, raw: object}>}
  */
 export async function callNvidia({
@@ -32,6 +34,7 @@ export async function callNvidia({
   temperature = 0.6,
   max_tokens = 2048,
   top_p = 0.95,
+  response_format,
 }) {
   if (!process.env.NVIDIA_API_KEY) {
     throw new Error("NVIDIA_API_KEY is not set. Copy .env.example to .env and fill it in.");
@@ -50,6 +53,9 @@ export async function callNvidia({
       max_tokens,
       top_p,
       stream: false,
+      // Omitted entirely when undefined, so providers that reject an explicit
+      // null still get the plain request they expect.
+      ...(response_format ? { response_format } : {}),
     }),
   });
 

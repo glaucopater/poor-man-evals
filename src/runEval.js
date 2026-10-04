@@ -11,6 +11,12 @@ import { callModel, listModelIds, normalizeModel, PROVIDERS } from "./providers.
 import { judgeOutput, buildJudgeScore, JUDGE_MODEL, JUDGE_PROVIDER } from "./judge.js";
 import { id as textId, dataset as textDataset } from "./datasets/text.js";
 import { id as imageId, dataset as imageDataset } from "./datasets/image.js";
+import {
+  id as complexImageId,
+  dataset as complexImageDataset,
+  notes as complexImageNotes,
+} from "./datasets/complex-image.js";
+import { scoreAgainstSchema } from "./jsonSchema.js";
 import { MODELS_UNDER_TEST, VISION_MODELS } from "./models.js";
 
 const langfuse = new LangfuseClient();
@@ -34,6 +40,11 @@ const ENABLED_PROVIDERS = new Set(
 const DATASETS = {
   [textId]: { models: MODELS_UNDER_TEST.map(normalizeModel), items: textDataset },
   [imageId]: { models: VISION_MODELS.map(normalizeModel), items: imageDataset },
+  [complexImageId]: {
+    models: VISION_MODELS.map(normalizeModel),
+    items: complexImageDataset,
+    notes: complexImageNotes,
+  },
 };
 
 /**
@@ -47,8 +58,9 @@ function newRunId() {
 
 /**
  * Builds the user message content for an eval item. Plain strings are sent
- * as-is; items that carry an `image` (base64 data URL) are expanded into an
- * OpenAI-style array of content parts so the model receives the pixels.
+ * as-is; items that carry an `image` (a base64 data URL, either inlined or read
+ * from disk at load time) are expanded into an OpenAI-style array of content
+ * parts so the model receives the pixels.
  */
 function buildUserContent(item) {
   if (!item.image) return item.input;
@@ -163,6 +175,11 @@ async function runOne(model, item, run) {
             provider: model.provider,
             model: model.id,
             messages: [userMessage],
+            // Per-item generation options (temperature, max tokens) and
+            // structured-output spec, when the dataset supplies them. Datasets
+            // without these keep the client defaults.
+            ...(item.options ?? {}),
+            ...(item.responseFormat ? { response_format: item.responseFormat } : {}),
           });
           output = result.content;
           usage = result.usage;
@@ -201,9 +218,35 @@ async function runOne(model, item, run) {
         const score = buildJudgeScore(judged);
         langfuse.score.observation({ otelSpan: generation.otelSpan }, score);
 
+        // Deterministic scorer, when the item declares a schema. An LLM judge
+        // is the wrong instrument for "are the braces right and is every
+        // required field present" -- it reads prose and hands out 4/5 to a
+        // malformed object. This is exact, free and reproducible, so it runs
+        // alongside the judge rather than instead of it.
+        let schemaScore = null;
+        if (item.scoreSchema) {
+          schemaScore = scoreAgainstSchema(output, item.scoreSchema);
+          langfuse.score.observation(
+            { otelSpan: generation.otelSpan },
+            {
+              name: "json-schema-valid",
+              value: schemaScore.value,
+              dataType: "NUMERIC",
+              comment: schemaScore.comment,
+            }
+          );
+        }
+
         span.end();
 
-        return { model: model.id, provider: model.provider, itemId: item.id, output, judged };
+        return {
+          model: model.id,
+          provider: model.provider,
+          itemId: item.id,
+          output,
+          judged,
+          schemaScore,
+        };
       })
   );
 }
@@ -324,6 +367,13 @@ async function main() {
 
   const { items } = selected;
 
+  // Dataset-level diagnostics (e.g. options that could not be mapped onto the
+  // provider API) surface here rather than at import time, so a dataset you
+  // didn't select stays quiet.
+  for (const note of selected.notes ?? []) {
+    console.log(`Note [${datasetId}]: ${note}`);
+  }
+
   if (models.length === 0) {
     console.error(
       `No models to run for dataset "${datasetId}". Either add model ids to its list in src/models.js, ` +
@@ -401,6 +451,26 @@ async function main() {
         `judge output) and were excluded from the averages. They are logged ` +
         `in Langfuse under the "llm-judge-error" score.`
     );
+  }
+
+  // Deterministic scores, when any item declared a schema. Reported separately
+  // from the judge average so the two are never averaged together.
+  const schemaResults = results.filter((r) => !r.error && r.schemaScore);
+  if (schemaResults.length > 0) {
+    const byModel = {};
+    for (const r of schemaResults) {
+      const key = `${r.model} (${r.provider})`;
+      byModel[key] ??= [];
+      byModel[key].push(r.schemaScore.value);
+    }
+    console.log("\n=== JSON schema validity (deterministic) ===");
+    for (const [model, values] of Object.entries(byModel)) {
+      const passed = values.filter((v) => v === 1).length;
+      console.log(`${model}: ${passed}/${values.length} responses conform`);
+    }
+    for (const r of schemaResults.filter((x) => x.schemaScore.value !== 1)) {
+      console.log(`  - ${r.itemId}: ${r.schemaScore.comment}`);
+    }
   }
 }
 

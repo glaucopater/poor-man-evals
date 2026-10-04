@@ -25,6 +25,11 @@ src/
   models.js              Models under test, tagged with their provider (edit this)
   datasets/text.js        Text prompts + judging criteria (edit this)
   datasets/image.js       Image prompts (base64 data URLs) + criteria (edit this)
+  datasets/complex_prompt.md  Captured model request (JSON), see promptRequest.js
+  datasets/complex-image.js   Long prompt over an on-disk image, schema-scored
+  images.js               Reads a binary image from disk into a base64 data URL
+  jsonSchema.js           Dependency-free JSON Schema validator (deterministic scorer)
+  promptRequest.js        Maps a captured Ollama request onto OpenAI parameters
   judge.js                LLM-as-judge: scores each output 1-5 against the criteria
   runEval.js              Orchestrates: for each model x each dataset item, run + score + log
 test/                     Unit tests (node --test), no provider calls
@@ -100,15 +105,87 @@ JUDGE_PROVIDER=groq                             # optional, "groq" or "nvidia"
   separated for several). Models stay in `src/models.js`; the harness just skips
   them and reports which providers it skipped.
 
+## Images on disk
+
+`src/datasets/image.js` inlines its base64 as a string literal, which is fine for
+a 20 KB test pattern and terrible for a real photo. For anything larger, put the
+binary in `src/assets/images/` and let the dataset read it:
+
+```js
+import { imageDataUrl } from "../images.js";
+
+export const dataset = [
+  {
+    id: "taiji-frame-1",
+    input: "Describe what you see.",
+    criteria: "...",
+    image: imageDataUrl("src/assets/images/complex-test.jpg"),
+  },
+];
+```
+
+`imageDataUrl` reads the binary and returns a `data:image/jpeg;base64,...` URL —
+exactly what the `image_url` content part wants. Paths resolve against the repo
+root (not `process.cwd()`), so the behaviour doesn't depend on where you run
+`yarn` from. Pass `{ maxBytes }` to fail early and legibly on an oversized image;
+base64 inflates by ~33%, and the resulting provider-side rejection is otherwise
+opaque. **The harness does not resize or compress** — do that upstream if a model
+rejects the payload.
+
+## Complex image dataset
+
+`yarn eval:complex` runs the `complex-image` dataset: a single 1920x1080 JPEG
+read from disk, with a long prompt that demands one compact JSON object back.
+
+Two things distinguish it from `yarn eval:image`:
+
+**The prompt is a captured request.** `src/datasets/complex_prompt.md` is a real
+request exported from Ollama — which is why it's JSON despite the `.md`
+extension. `src/promptRequest.js` maps Ollama's vocabulary onto the
+OpenAI-compatible shape the harness speaks:
+
+| Ollama | Mapped to |
+|---|---|
+| `format` (JSON Schema) | `response_format: { type: "json_schema", ... }` |
+| `options.num_predict` | `max_completion_tokens` |
+| `options.temperature` | `temperature` |
+| `messages[].images[]` | an OpenAI `image_url` content part |
+| `options.repeat_penalty` | **dropped** — no equivalent; logged as a warning |
+| `think: true` | **dropped** — not exposed by Groq/NVIDIA chat completions |
+
+Anything unmappable is reported on startup rather than silently ignored, because a
+silently-dropped `num_predict` shows up much later as a mysteriously truncated eval.
+
+The captured request references an image by absolute path from the machine it was
+exported on. The dataset ignores it and uses the repo's own copy, so it runs
+anywhere.
+
+**It gets a deterministic score, not just a judge score.** When the prompt pins
+down an exact output shape, "are the braces right and is every required field
+present?" is an objective question, and an LLM judge is the wrong instrument for
+it — judges read prose and hand a 4/5 to a malformed object. So alongside
+`llm-judge-score`, every item with a schema also gets `json-schema-valid` (1/0)
+from the dependency-free validator in `src/jsonSchema.js`, and the summary prints
+a separate section for it:
+
+```
+=== JSON schema validity (deterministic) ===
+qwen/qwen3.8-27b (groq): 1/1 responses conform
+```
+
+To add a deterministic scorer to your own dataset, set `scoreSchema` on the item
+and attach `responseFormat: toResponseFormat(yourSchema)`.
+
 ## Run
 
 ```bash
 yarn eval          # text dataset (default)
 yarn eval:text     # text dataset
 yarn eval:image    # image dataset (VISION_MODELS only)
+yarn eval:complex  # complex-image dataset (VISION_MODELS only)
 ```
 
-To run both datasets in one go: `yarn eval:text && yarn eval:image`.
+To run every dataset in one go: `yarn eval:text && yarn eval:image && yarn eval:complex`.
 
 Console output looks like:
 
@@ -167,9 +244,10 @@ yarn check             # both
 
 `yarn test` needs no API keys: `test/helpers/env.mjs` sets placeholder
 credentials and every test stubs `globalThis.fetch`. `yarn verify:langfuse` runs
-two scenarios — a healthy judge, and a judge returning unparseable output — and
-asserts on the HTTP traffic that actually left the process, including that a
-total judge failure still exports every trace.
+three scenarios — a healthy judge, a judge returning unparseable output, and the
+complex-image dataset with its binary image and structured output — asserting on
+the HTTP traffic that actually left the process, including that a total judge
+failure still exports every trace.
 
 ## Troubleshooting
 
@@ -191,9 +269,15 @@ Meanwhile, take NVIDIA out of the run without touching `src/models.js` by settin
 `ENABLED_PROVIDERS=groq` in `.env`. Re-add `nvidia` once your key works.
 
 **`Unknown dataset "..."`** — the id must match a `dataset id` export in
-`src/datasets/`. Run `yarn eval:text` or `yarn eval:image`. Note that
-`node src/runEval.js --dataset` with no value exits immediately instead of
-reporting `Unknown dataset "undefined"`.
+`src/datasets/`. Run `yarn eval:text`, `yarn eval:image` or `yarn eval:complex`.
+Note that `node src/runEval.js --dataset` with no value exits immediately instead
+of reporting `Unknown dataset "undefined"`.
+
+**A vision model rejects the image** — check the payload size first. The
+complex-image case sends ~731 KB of base64 for one 1920x1080 JPEG. Some gateways
+cap request bodies and some vision models cap image dimensions, and the error may
+just say "invalid image". Downscale or re-encode as JPEG quality ~80 and re-run;
+`imageDataUrl(path, { maxBytes })` will at least fail early with the real number.
 
 ## Known limitations
 
