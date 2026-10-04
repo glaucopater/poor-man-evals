@@ -8,6 +8,7 @@ import "./config.js";
 import { langfuseSpanProcessor } from "./instrumentation.js";
 
 import { config, profile, configSource } from "./config.js";
+import { formatDuration, formatItemOutcome, formatEta, summarizeTimings } from "./format.js";
 
 import { randomUUID } from "node:crypto";
 
@@ -202,6 +203,7 @@ async function runOne(model, item, run) {
         // window, so a truncated structured response is a real failure mode.
         let truncated = null;
         let doneReason = null;
+        let timings = null;
 
         try {
           const result = await callModel({
@@ -218,6 +220,7 @@ async function runOne(model, item, run) {
           usage = result.usage;
           if ("truncated" in result) truncated = result.truncated;
           if ("doneReason" in result) doneReason = result.doneReason;
+          if ("timings" in result) timings = result.timings;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           generation.update({ output: { error: message } }).end();
@@ -306,6 +309,8 @@ async function runOne(model, item, run) {
           judged,
           schemaScore,
           truncated,
+          usage,
+          timings,
         };
       })
   );
@@ -502,24 +507,43 @@ async function main() {
   console.log(`Judge: ${config.judge.model} (${providerTag(config.judge.provider)})`);
   console.log(`Langfuse session: ${run.sessionId}`);
 
+  const checkStartedAt = Date.now();
   await assertModelsAvailable(models, { requiresVision: items.some((item) => item.image) });
+  console.log(`Availability check took ${formatDuration(Date.now() - checkStartedAt)}.\n`);
 
   const results = [];
+  const total = models.length * items.length;
+  const runStartedAt = Date.now();
 
-  for (const model of models) {
+  for (const [modelIndex, model] of models.entries()) {
     for (const item of items) {
-      console.log(`Running ${model.id} (${providerTag(model.provider)}) on "${item.id}"...`);
+      const position = modelIndex * items.length + items.indexOf(item) + 1;
+      console.log(
+        `[${String(position).padStart(String(total).length)}/${total}] ` +
+          `Running ${model.id} (${providerTag(model.provider)}) on "${item.id}"...`
+      );
       // runOne already handles model-call and judge-call failures per item.
       // This is the last line of defence: an unexpected throw (a Langfuse bug,
       // a bad payload) must not abort the remaining 50-odd runs with every span
       // still buffered in memory.
+      const startedAt = Date.now();
+      let result;
       try {
-        results.push(await runOne(model, item, run));
+        result = await runOne(model, item, run);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`Unexpected failure on "${item.id}": ${message}`);
-        results.push({ model: model.id, provider: model.provider, itemId: item.id, error: message });
+        result = { model: model.id, provider: model.provider, itemId: item.id, error: message };
       }
+      result.elapsedMs = Date.now() - startedAt;
+      results.push(result);
+
+      // Report each item as it lands. A run over six models and a large image can
+      // take many minutes, and a silent gap reads as a hang rather than work.
+      const meanMs =
+        results.reduce((sum, r) => sum + (r.elapsedMs ?? 0), 0) / results.length;
+      const eta = formatEta(results.length, total - results.length, meanMs);
+      console.log(`    -> ${formatItemOutcome(result)}${eta ?? ""}`);
     }
   }
 
@@ -592,13 +616,41 @@ async function main() {
   if (cutShort.length > 0) {
     console.log(`\n=== Truncated responses ===`);
     for (const r of cutShort) {
-      console.log(`  - ${r.model} (${r.provider}) on "${r.itemId}"`);
+      console.log(`  - ${r.model} (${providerTag(r.provider)}) on "${r.itemId}"`);
     }
     console.log(
       `  The provider stopped generating before the answer was finished. Scores for ` +
         `these items are unreliable: raise the context window (OLLAMA_CONTEXT_LENGTH) ` +
         `or lower num_predict in complex_prompt.md.`
     );
+  }
+
+  // Wall-clock and token accounting. Total tokens are the only cost proxy the
+  // harness has that works for a local run too, where there is no bill to check.
+  const perModel = summarizeTimings(results);
+  if (perModel.length > 0) {
+    const totalOut = perModel.reduce((sum, e) => sum + e.out, 0);
+    console.log(`
+=== Timing and tokens ===`);
+    for (const e of perModel) {
+      console.log(
+        `${e.key.padEnd(42)} ${formatDuration(e.ms).padStart(7)} total · ` +
+          `${formatDuration(e.slowest).padStart(7)} slowest · ` +
+          `${e.in.toLocaleString()} in / ${e.out.toLocaleString()} out tok · n=${e.n}`
+      );
+    }
+    console.log(
+      `${"ALL".padEnd(42)} ${formatDuration(Date.now() - runStartedAt).padStart(7)} wall · ` +
+        `${totalOut.toLocaleString()} out tok · ${results.length} item(s)`
+    );
+    if (perModel.length > 1) {
+      const slowest = [...perModel].sort((a, b) => b.ms - a.ms)[0];
+      const fastest = [...perModel].sort((a, b) => a.ms - b.ms)[0];
+      console.log(
+        `  slowest: ${slowest.key} (${formatDuration(slowest.ms)}), ` +
+          `fastest: ${fastest.key} (${formatDuration(fastest.ms)})`
+      );
+    }
   }
 }
 

@@ -13,32 +13,17 @@
 // cost-bearing generation, and observation-level scores.
 //
 // Usage: yarn verify:langfuse
-import { createServer } from "node:http";
-
 const failures = [];
 const check = (ok, label, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? ` -- ${detail}` : ""}`);
   if (!ok) failures.push(label);
 };
 
-// ---------------------------------------------------------------- mock Langfuse
-const captured = [];
-const mock = createServer((req, res) => {
-  const chunks = [];
-  req.on("data", (c) => chunks.push(c));
-  req.on("end", () => {
-    captured.push({ path: req.url.split("?")[0], headers: req.headers, body: Buffer.concat(chunks) });
-    if (req.url.includes("/otel/")) {
-      res.writeHead(200, { "content-type": "application/x-protobuf" });
-      res.end(Buffer.alloc(0));
-    } else {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ successes: [], errors: [] }));
-    }
-  });
-});
-await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
-const baseUrl = `http://127.0.0.1:${mock.address().port}`;
+import { startMockLangfuse } from "./mock-langfuse.mjs";
+
+// Shared with scripts/eval-dry.mjs so both agree on what counts as a request
+// worth recording.
+const { baseUrl, captured, close: closeMock } = await startMockLangfuse();
 
 // --- env must be set BEFORE any harness module is imported: the provider
 // --- clients read their throttle interval at import time, and tracing env must
@@ -422,6 +407,6 @@ check(
   "inline base64 stripped from complex-image span payloads"
 );
 
-mock.close();
+await closeMock();
 realLog("\n" + (failures.length === 0 ? "ALL CHECKS PASSED" : `FAILED (${failures.length}): ${failures.join("; ")}`));
 process.exit(failures.length === 0 ? 0 : 1);

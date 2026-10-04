@@ -197,6 +197,17 @@ export async function callOllama({
   const promptTokens = data.prompt_eval_count ?? 0;
   const completionTokens = data.eval_count ?? 0;
 
+  // Ollama reports a phase breakdown that explains *why* a call took as long as
+  // it did. The first call against a model pays a large load cost (reading
+  // weights into VRAM); without this, a slow first item looks like a hang rather
+  // than a one-off. All durations are nanoseconds.
+  const ms = (ns) => (typeof ns === "number" && Number.isFinite(ns) ? Math.round(ns / 1e6) : null);
+  const timings = {
+    loadMs: ms(data.load_duration),
+    promptEvalMs: ms(data.prompt_eval_duration),
+    evalMs: ms(data.eval_duration),
+  };
+
   return {
     content: normalizeCompletionContent(data),
     // Thinking models emit this separately from content; surfaced so it can be
@@ -210,6 +221,7 @@ export async function callOllama({
     // asking for 8192 output tokens with an 8k window produces exactly this.
     truncated: data.done_reason === "length",
     doneReason: data.done_reason ?? null,
+    timings,
     usage: {
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,

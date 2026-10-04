@@ -25,6 +25,7 @@ src/
   jsonSchema.js           Dependency-free JSON Schema validator (deterministic scorer)
   promptRequest.js        Maps a captured model request onto provider parameters
   judge.js                LLM-as-judge: scores each output 1-5 against the criteria
+  format.js               Duration/token formatting for the run output
   runEval.js              Orchestrates: for each model x each dataset item, run + score + log
   providers/              One folder per provider backend
     index.js                Registry: name -> client, plus param-name translation
@@ -34,7 +35,10 @@ src/
     http.js                 Shared throttle + 429/transport retry
     content.js              Normalizes a response body into plain assistant text
 test/                     Unit tests (node --test), no provider calls
-scripts/                  verify-langfuse-v5.mjs: end-to-end check against a mock Langfuse
+scripts/
+  mock-langfuse.mjs       Throwaway Langfuse stand-in, shared by the two scripts below
+  eval-dry.mjs            Runs a real eval with Langfuse mocked (yarn eval:dry)
+  verify-langfuse-v5.mjs  End-to-end assertions against that mock
 ```
 
 For every `(model, dataset item)` pair, `runEval.js`:
@@ -369,8 +373,32 @@ yarn eval              # text dataset (default)
 yarn eval:text         # text dataset
 yarn eval:image        # image dataset
 yarn eval:complex      # complex-image dataset
+yarn eval:dry          # same run, Langfuse mocked - nothing is ingested
 yarn eval:complex --profile local    # use the "local" profile from eval.config.yaml
 ```
+
+### Dry runs
+
+`yarn eval:dry` (or `yarn eval:dry complex-image --profile local`) runs the
+**real** pipeline -- real providers, real judge, real tokens, so you learn what a
+run costs and how long it takes -- but points `LANGFUSE_BASE_URL` at a throwaway
+local mock. No trace, score or media record is created in your real project, and
+the run finishes by telling you exactly what *would* have been ingested:
+
+```
+  DRY RUN - Langfuse is mocked; nothing will be ingested.
+  Model and judge calls are REAL and will use their quota.
+...
+  DRY RUN COMPLETE - nothing was sent to a real Langfuse project.
+  Telemetry that WOULD have been ingested:
+    media uploads       6 request(s), 1242 bytes
+    score writes        6 request(s), 8921 bytes
+    spans (OTLP)        9 request(s), 144727 bytes
+```
+
+Use it as the default for "does this work?" and reach for a real `yarn eval` only
+when you actually want the results kept. A test run against the real project
+leaves a session of traces that is indistinguishable from real results later.
 
 To run every dataset in one go: `yarn eval:text && yarn eval:image && yarn eval:complex`.
 
