@@ -74,22 +74,97 @@ Run `yarn verify:langfuse` to check all of the above against a local mock endpoi
 
 ```bash
 yarn install        # Node 20+
-cp .env.example .env
+cp .env.example .env                       # secrets only
+cp eval.config.example.yaml eval.config.yaml   # everything else
 ```
+
+Two files, each with one job:
+
+| File | Holds | Gitignored |
+|---|---|---|
+| `.env` | credentials, nothing else | yes |
+| `eval.config.yaml` | all settings and profiles | yes |
+| `eval.config.example.yaml` | the documented template | **no** — commit it |
+
+Keeping them separate is what makes `eval.config.yaml` safe to commit, so it can
+be reviewed and shared like code. Neither file is required: with no config file
+the harness falls back to built-in defaults and reads everything from `.env`, so
+nothing breaks if you only have one.
 
 Fill in `.env`:
 
 ```
 GROQ_API_KEY=...            # https://console.groq.com/keys
 NVIDIA_API_KEY=...          # https://build.nvidia.com (only needed for provider: "nvidia" models)
-OLLAMA_BASE_URL=http://localhost:11434   # no key needed; must be running (`ollama serve`)
 LANGFUSE_PUBLIC_KEY=...     # Langfuse project settings
 LANGFUSE_SECRET_KEY=...
-LANGFUSE_BASE_URL=https://cloud.langfuse.com   # or your self-hosted v4 URL
-LANGFUSE_TRACING_ENVIRONMENT=development        # optional; defaults to NODE_ENV
-JUDGE_MODEL=llama-3.3-70b-versatile             # optional, any chat model id
-JUDGE_PROVIDER=groq                             # optional, "groq", "nvidia" or "ollama"
 ```
+
+## Configuration
+
+`eval.config.yaml` is structured, validated, and commented:
+
+```yaml
+profile: local          # default profile
+
+profiles:
+  local:                # yarn eval:complex --profile local
+    run:
+      enabled_providers: [ollama]
+    judge:
+      provider: ollama
+      model: qwen3.8:27b
+  hosted: ...           # yarn eval:complex --profile hosted
+
+run:
+  enabled_providers: [groq, nvidia]
+judge:
+  provider: groq
+  model: openai/gpt-oss-20b
+  max_completion_tokens: 512
+  think: false
+providers:
+  groq:
+    min_request_interval_ms: 2200
+    max_retries: 5
+langfuse:
+  base_url: https://cloud.langfuse.com
+  environment: development
+```
+
+**An unknown key is a hard error**, not a silently ignored line. With `.env`,
+`GROQ_MAX_RETRES=5` reads fine, changes nothing, and looks like it worked:
+
+```
+Error: Invalid config at "eval.config.yaml.providers.groq": unknown key
+"max_retrries". (did you mean "max_retries"?) Known keys: base_url,
+min_request_interval_ms, max_retries
+```
+
+Wrong types are caught too, with the path that is wrong: a list written as a
+bare string, a quoted `"false"` where a boolean belongs, or a non-numeric token
+count. Keys inside a profile you are not currently running are validated as
+well, so a typo cannot sit dormant until someone switches profiles.
+
+**Precedence**, lowest to highest:
+
+```
+built-in defaults  <  eval.config.yaml  <  --profile  <  real environment variables
+```
+
+So the escape hatch still works — `ENABLED_PROVIDERS=ollama JUDGE_MODEL=x yarn eval` overrides the file without editing it.
+
+### Why the config still writes to `process.env`
+
+This looks redundant, and is deliberate. `new LangfuseClient()` in `runEval.js`
+is constructed with no arguments, so the Langfuse SDK reads
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_BASE_URL` and `LANGFUSE_TRACING_ENVIRONMENT`
+straight out of `process.env`. The same is true of every client module's throttle
+settings, which are read at import time.
+
+So `src/config.js` resolves the YAML into concrete values and projects them into
+`process.env`, and no other module had to change. The file is a structured front
+end to an interface that already had to exist.
 
 ## Configure your eval
 
@@ -102,12 +177,13 @@ JUDGE_PROVIDER=groq                             # optional, "groq", "nvidia" or 
   `src/datasets/image.js`. Each item is `{ id, input, criteria }` (`image` items
   add a base64 `image` data URL); `criteria` is plain English describing what a
   good response looks like, which the judge model uses to score.
+- **Which providers and judge to use** — `run.enabled_providers` and `judge.*`
+  in `eval.config.yaml`, or a profile. No need to edit `.env` or any code.
 - **Adding a provider** — drop a module in `src/providers/` exposing `callX` and
   `listXModelIds`, then add one entry to `PROVIDERS` and one line to
   `SUPPORTED_PARAMS` in `src/providers/index.js`. Nothing else needs to change.
-- **Turning a provider off** — set `ENABLED_PROVIDERS=groq` in `.env` (comma
-  separated for several). Models stay in `src/models.js`; the harness just skips
-  them and reports which providers it skipped.
+- **Turning a provider off** — remove it from `run.enabled_providers` (or use a
+  profile). Models stay in `src/models.js`; the harness skips them and says so.
 
 ## Images on disk
 
@@ -144,8 +220,11 @@ models a good baseline to compare hosted ones against.
 
 ```bash
 # fully local, zero-cost: no Groq or NVIDIA call at all
-ENABLED_PROVIDERS=ollama JUDGE_PROVIDER=ollama JUDGE_MODEL=qwen3.8:27b yarn eval:complex
+yarn eval:complex --profile local
 ```
+
+Or define the settings once in `eval.config.yaml` under `profiles.local` and
+select it with `--profile local`.
 
 ### Picking a local judge
 
@@ -269,10 +348,11 @@ and attach `responseFormat: toResponseFormat(yourSchema)`.
 ## Run
 
 ```bash
-yarn eval          # text dataset (default)
-yarn eval:text     # text dataset
-yarn eval:image    # image dataset (VISION_MODELS only)
-yarn eval:complex  # complex-image dataset (VISION_MODELS only)
+yarn eval              # text dataset (default)
+yarn eval:text         # text dataset
+yarn eval:image        # image dataset (VISION_MODELS only)
+yarn eval:complex      # complex-image dataset
+yarn eval:complex --profile local    # use the "local" profile from eval.config.yaml
 ```
 
 To run every dataset in one go: `yarn eval:text && yarn eval:image && yarn eval:complex`.
@@ -327,13 +407,16 @@ move to a paid tier and lower the interval.
 ## Tests
 
 ```bash
-yarn test              # unit tests: throttle/backoff, judge parsing, score building
+yarn test              # unit tests: config validation, throttle/backoff, judge parsing, score building
 yarn verify:langfuse   # end-to-end against a mock Langfuse server (no provider calls)
 yarn check             # both
 ```
 
 `yarn test` needs no API keys: `test/helpers/env.mjs` sets placeholder
-credentials and every test stubs `globalThis.fetch`. `yarn verify:langfuse` runs
+credentials and every test stubs `globalThis.fetch`. It covers config validation
+and precedence, `Retry-After` parsing, retry exhaustion, judge JSON parsing and
+score construction, JSON Schema validation, and the provider request/response
+translations. `yarn verify:langfuse` runs
 three scenarios — a healthy judge, a judge returning unparseable output, and the
 complex-image dataset with its binary image and structured output — asserting on
 the HTTP traffic that actually left the process, including that a total judge

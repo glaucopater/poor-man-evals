@@ -1,6 +1,13 @@
-// Must be the first import: registers the Langfuse OTel span processor
-// before any tracing calls happen.
+// Must be the first import: resolves eval.config.yaml, validates it, and
+// projects the result into process.env. Everything below reads process.env, and
+// so does the Langfuse SDK, so this has to happen before any of them load.
+import "./config.js";
+
+// Must be imported before anything else that creates spans: registers the
+// Langfuse OTel span processor with the Node SDK.
 import { langfuseSpanProcessor } from "./instrumentation.js";
+
+import { config, profile, configSource } from "./config.js";
 
 import { randomUUID } from "node:crypto";
 
@@ -86,6 +93,10 @@ function resolveDataset() {
   let name = textId;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === "--profile") {
+      i++; // value is consumed by config.js
+      continue;
+    }
     if (arg === "--dataset") {
       const value = argv[i + 1];
       // Catch a missing value here rather than letting `name` become undefined
@@ -447,9 +458,11 @@ async function main() {
 
   const providers = [...new Set(models.map((m) => m.provider))].join(", ");
   const run = { sessionId: newRunId(), datasetId };
+  console.log(`Config: ${profile === "default" ? "defaults" : `profile "${profile}"`} (${configSource})`);
   console.log(
     `Dataset: ${datasetId} (${items.length} case(s), ${models.length} model(s) via ${providers})`
   );
+  console.log(`Judge: ${config.judge.model} (${config.judge.provider})`);
   console.log(`Langfuse session: ${run.sessionId}`);
 
   await assertModelsAvailable(models, { requiresVision: items.some((item) => item.image) });
