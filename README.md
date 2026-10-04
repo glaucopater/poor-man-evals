@@ -461,12 +461,24 @@ just say "invalid image". Downscale or re-encode as JPEG quality ~80 and re-run;
   judge at a vision-capable model and forwarding `item.image` is the fix if that
   matters for your eval.
 
+## Development
+
+`yarn check` runs both suites (96 unit tests and 50 end-to-end checks against a
+mock Langfuse server, no provider calls).
+
+[`docs/pull-request.md`](docs/pull-request.md) is the write-up for the
+`fix/eval-harness-bugs` branch — the review that found the judge-failure data
+loss and the silent `0` scores, plus the local Ollama provider, the YAML config
+layer, and the measurements behind each fix. Start there if you want the
+reasoning rather than just the diff.
+
 ## Notes / next steps
 
-- The judge reuses Groq by default for convenience, but is provider-aware:
-  set `JUDGE_PROVIDER=nvidia` (plus a matching `JUDGE_MODEL`) to run it on
-  NVIDIA NIM, or point `judge.js` at a different provider entirely if you want a
-  stronger judge than the models under test.
+- The judge runs on a provider of its own, so the scorer stays independent from
+  the models being scored. Set `judge.provider` and `judge.model` in
+  `eval.config.yaml` (see [Configuration](#configuration)), or point `judge.js`
+  at a different provider entirely if you want a stronger judge than the models
+  under test.
 - Scores are numeric (1-5) LLM-judge scores attached to the generation
   observation. You can add deterministic scorers (exact match, regex, JSON
   schema validation, etc.) the same way — compute a value and call
