@@ -1,7 +1,8 @@
 // Models under test, run against the full dataset via the chat completions
 // endpoint. Each entry is `{ id, provider }`, where `provider` is a key from
-// src/providers.js ("groq" or "nvidia" today). A bare string still works and
-// defaults to Groq, but tag entries explicitly once you mix providers.
+// src/providers/index.js ("groq", "nvidia" or "ollama"). A bare string still
+// works and defaults to Groq, but tag entries explicitly once you mix
+// providers.
 //
 // Edit freely -- any *chat-capable* model id on that provider's account works.
 // The NVIDIA catalogs also list embeddings, rerankers, safety classifiers,
@@ -37,6 +38,33 @@ export const VISION_MODELS = [
   { id: "meta/llama-3.2-11b-vision-instruct", provider: "nvidia" },
   { id: "microsoft/phi-3-vision-128k-instruct", provider: "nvidia" },
 ];
+
+// Locally installed Ollama models (provider: "ollama"). No API key, no rate
+// limit, no cost -- which is what makes them useful as a baseline to compare
+// the hosted models against.
+//
+// The ids below are whatever `ollama list` reports on this machine. The harness
+// fails fast and prints the local catalog if one is missing, so a stale entry
+// here is a one-line fix rather than a confusing mid-run error. Vision
+// capability is checked at startup too, so a text-only model is reported as
+// such instead of silently ignoring the image.
+export const LOCAL_VISION_MODELS = [
+  { id: "qwen3-vl:2b", provider: "ollama" },
+  { id: "qwen3.8:27b", provider: "ollama" },
+  { id: "qwen3.5:9b", provider: "ollama" },
+  { id: "gemma4:12b", provider: "ollama" },
+  { id: "gemma4:e2b", provider: "ollama" },
+  { id: "llava:latest", provider: "ollama" },
+];
+
+// The complex-image dataset runs against local models *and* the hosted vision
+// models, so one run answers both "is this prompt any good?" and "does a small
+// local model hold up?".
+//
+// Narrow it with ENABLED_PROVIDERS, e.g. `ENABLED_PROVIDERS=ollama` for a fully
+// local, zero-cost run. Set JUDGE_PROVIDER=ollama and JUDGE_MODEL to a local id
+// as well, or the judge still calls Groq and the run still needs a Groq key.
+export const COMPLEX_IMAGE_MODELS = [...LOCAL_VISION_MODELS, ...VISION_MODELS];
 
 // Not chat-completion models -- included here for reference, but they won't
 // work with this harness as-is since they use different endpoints and

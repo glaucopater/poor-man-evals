@@ -1,4 +1,4 @@
-import { callModel, DEFAULT_PROVIDER } from "./providers.js";
+import { callModel, DEFAULT_PROVIDER } from "./providers/index.js";
 
 export const JUDGE_PROVIDER = process.env.JUDGE_PROVIDER || DEFAULT_PROVIDER;
 export const JUDGE_MODEL = process.env.JUDGE_MODEL || "openai/gpt-oss-20b";

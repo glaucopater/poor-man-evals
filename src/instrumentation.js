@@ -1,6 +1,6 @@
 // This module must be imported *before* anything else that creates spans
-// (i.e. before groqClient/judge run inside a trace). Importing it registers
-// the Langfuse OpenTelemetry span processor with the Node SDK.
+// (i.e. before the provider clients / judge run inside a trace). Importing it
+// registers the Langfuse OpenTelemetry span processor with the Node SDK.
 import "dotenv/config";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseSpanProcessor } from "@langfuse/otel";

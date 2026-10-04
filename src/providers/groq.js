@@ -1,5 +1,5 @@
 import { normalizeCompletionContent } from "./content.js";
-import { createThrottledFetch, numFromEnv } from "./throttle.js";
+import { createThrottledFetch, numFromEnv } from "./http.js";
 
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models";

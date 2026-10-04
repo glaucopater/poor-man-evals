@@ -17,21 +17,22 @@ without building your own UI.
 ```
 src/
   instrumentation.js   Boots the Langfuse OpenTelemetry span processor (import first)
-  throttle.js           Shared per-provider throttle + 429 retry-with-backoff
-  content.js            Normalizes an OpenAI-compatible response into plain text
-  groqClient.js         Thin wrapper around Groq's OpenAI-compatible chat completions API
-  nvidiaClient.js       Same wrapper shape for NVIDIA NIM's OpenAI-compatible API
-  providers.js           Maps a provider name ("groq", "nvidia") to its client (edit to add a provider)
-  models.js              Models under test, tagged with their provider (edit this)
   datasets/text.js        Text prompts + judging criteria (edit this)
   datasets/image.js       Image prompts (base64 data URLs) + criteria (edit this)
   datasets/complex_prompt.md  Captured model request (JSON), see promptRequest.js
   datasets/complex-image.js   Long prompt over an on-disk image, schema-scored
   images.js               Reads a binary image from disk into a base64 data URL
   jsonSchema.js           Dependency-free JSON Schema validator (deterministic scorer)
-  promptRequest.js        Maps a captured Ollama request onto OpenAI parameters
+  promptRequest.js        Maps a captured model request onto provider parameters
   judge.js                LLM-as-judge: scores each output 1-5 against the criteria
   runEval.js              Orchestrates: for each model x each dataset item, run + score + log
+  providers/              One folder per provider backend
+    index.js                Registry: name -> client, plus param-name translation
+    groq.js                 Groq chat completions
+    nvidia.js               NVIDIA NIM chat completions
+    ollama.js               Local Ollama, via its NATIVE /api/chat API
+    http.js                 Shared throttle + 429/transport retry
+    content.js              Normalizes a response body into plain assistant text
 test/                     Unit tests (node --test), no provider calls
 scripts/                  verify-langfuse-v5.mjs: end-to-end check against a mock Langfuse
 ```
@@ -81,26 +82,29 @@ Fill in `.env`:
 ```
 GROQ_API_KEY=...            # https://console.groq.com/keys
 NVIDIA_API_KEY=...          # https://build.nvidia.com (only needed for provider: "nvidia" models)
+OLLAMA_BASE_URL=http://localhost:11434   # no key needed; must be running (`ollama serve`)
 LANGFUSE_PUBLIC_KEY=...     # Langfuse project settings
 LANGFUSE_SECRET_KEY=...
 LANGFUSE_BASE_URL=https://cloud.langfuse.com   # or your self-hosted v4 URL
 LANGFUSE_TRACING_ENVIRONMENT=development        # optional; defaults to NODE_ENV
 JUDGE_MODEL=llama-3.3-70b-versatile             # optional, any chat model id
-JUDGE_PROVIDER=groq                             # optional, "groq" or "nvidia"
+JUDGE_PROVIDER=groq                             # optional, "groq", "nvidia" or "ollama"
 ```
 
 ## Configure your eval
 
 - **Models to compare** — edit `src/models.js`. Each entry is
-  `{ id, provider }`, where `provider` is `"groq"` or `"nvidia"`. A bare string
-  still works and defaults to Groq. `MODELS_UNDER_TEST` drives the text dataset;
-  `VISION_MODELS` drives the image dataset.
+  `{ id, provider }`, where `provider` is `"groq"`, `"nvidia"` or `"ollama"`. A
+  bare string still works and defaults to Groq. `MODELS_UNDER_TEST` drives the
+  text dataset; `VISION_MODELS` (hosted) and `LOCAL_VISION_MODELS` (Ollama)
+  drive the image datasets.
 - **Prompts and pass/fail criteria** — edit `src/datasets/text.js` and
   `src/datasets/image.js`. Each item is `{ id, input, criteria }` (`image` items
   add a base64 `image` data URL); `criteria` is plain English describing what a
   good response looks like, which the judge model uses to score.
-- **Adding a provider** — add a client module and one entry in `src/providers.js`,
-  then tag models with the new name in `src/models.js`.
+- **Adding a provider** — drop a module in `src/providers/` exposing `callX` and
+  `listXModelIds`, then add one entry to `PROVIDERS` and one line to
+  `SUPPORTED_PARAMS` in `src/providers/index.js`. Nothing else needs to change.
 - **Turning a provider off** — set `ENABLED_PROVIDERS=groq` in `.env` (comma
   separated for several). Models stay in `src/models.js`; the harness just skips
   them and reports which providers it skipped.
@@ -132,6 +136,51 @@ base64 inflates by ~33%, and the resulting provider-side rejection is otherwise
 opaque. **The harness does not resize or compress** — do that upstream if a model
 rejects the payload.
 
+## Running against local Ollama
+
+Set `ENABLED_PROVIDERS=ollama` and the harness talks to your local server
+instead of a hosted API. No key, no rate limit, no cost — which makes local
+models a good baseline to compare hosted ones against.
+
+```bash
+# fully local, zero-cost: no Groq or NVIDIA call at all
+ENABLED_PROVIDERS=ollama JUDGE_PROVIDER=ollama JUDGE_MODEL=qwen3-vl:2b yarn eval:complex
+```
+
+Ollama needs to be running (`ollama serve`) with the models in
+`src/models.js` pulled; `ollama list` is the source of truth for the ids. If one
+isn't pulled, the startup check fails fast and prints your local catalog.
+
+The client deliberately targets Ollama's **native `/api/chat` API**, not its
+`/v1` OpenAI-compatibility shim, because the native API is a superset for what
+a structured vision eval needs:
+
+| Capability | Ollama native | Groq / NVIDIA |
+|---|---|---|
+| `format` = full JSON Schema | yes | `{type: "json_object"}` only |
+| `think` switch | yes | no |
+| `options.repeat_penalty` | yes | no |
+| Images | bare base64 in `images[]` | `image_url` content part |
+
+All of that translation lives in `src/providers/ollama.js`; nothing else in the
+harness knows Ollama has a different request format.
+
+**Local models and truncation.** Ollama silently clamps `num_predict` to fit the
+context window. A 1920x1080 image costs roughly 2.3k prompt tokens, so the
+captured prompt's `num_predict: 8192` needs more than 10k of context — against a
+default 8k window a verbose model gets cut off **mid-JSON**, which looks like a
+wrong answer rather than a config problem. The client therefore reads Ollama's
+`done_reason` and records a separate `response-truncated` score, and the summary
+lists cut-off items on their own:
+
+```
+=== Truncated responses ===
+  - qwen3-vl:2b (ollama) on "taiji-frame-1"
+```
+
+Raise `OLLAMA_CONTEXT_LENGTH`, or lower `num_predict` in `complex_prompt.md`, if
+you see that section.
+
 ## Complex image dataset
 
 `yarn eval:complex` runs the `complex-image` dataset: a single 1920x1080 JPEG
@@ -150,11 +199,14 @@ OpenAI-compatible shape the harness speaks:
 | `options.num_predict` | `max_completion_tokens` |
 | `options.temperature` | `temperature` |
 | `messages[].images[]` | an OpenAI `image_url` content part |
-| `options.repeat_penalty` | **dropped** — no equivalent; logged as a warning |
-| `think: true` | **dropped** — not exposed by Groq/NVIDIA chat completions |
+| `options.repeat_penalty` | forwarded; **only Ollama applies it** |
+| `think` | forwarded; **only Ollama applies it** |
 
-Anything unmappable is reported on startup rather than silently ignored, because a
-silently-dropped `num_predict` shows up much later as a mysteriously truncated eval.
+Anything a given provider can't honour is reported on startup rather than
+silently ignored: a silently-dropped `num_predict` otherwise surfaces much later
+as a mysteriously truncated eval. `SUPPORTED_PARAMS` in
+`src/providers/index.js` lists what each provider implements, and the registry
+warns once per run when a dataset hands a provider something it can't use.
 
 The captured request references an image by absolute path from the machine it was
 exported on. The dataset ignores it and uses the repo's own copy, so it runs
@@ -191,17 +243,17 @@ Console output looks like:
 
 ```
 Running qwen/qwen3.8-27b (groq) on "fib-ocaml"...
-Running meta/llama-3.1-8b-instruct (nvidia) on "fib-ocaml"...
+Running qwen3-vl:2b (ollama) on "fib-ocaml"...
 Running qwen/qwen3.8-27b (groq) on "capital-of-france"...
 
 === Eval Summary ===
 [qwen/qwen3.8-27b (groq)] fib-ocaml: score=5/5 - Provides correct, idiomatic OCaml...
-[meta/llama-3.1-8b-instruct (nvidia)] fib-ocaml: score=4/5 - Recursive but no memoization...
+[qwen3-vl:2b (ollama)] fib-ocaml: score=4/5 - Recursive but no memoization...
 [qwen/qwen3.8-27b (groq)] capital-of-france: score=5/5 - Correctly states Paris...
 
 === Average score by model ===
 qwen/qwen3.8-27b (groq): 4.67/5 (n=3)
-meta/llama-3.1-8b-instruct (nvidia): 4.00/5 (n=3)
+qwen3-vl:2b (ollama): 4.00/5 (n=3)
 ```
 
 Then check your Langfuse project's Traces view (filter by trace name prefix
@@ -217,8 +269,8 @@ console's Limits page). NVIDIA NIM limits vary by plan and model. Since this
 harness makes one completion call + one judge call per dataset item, it's easy
 to hit a 429 once you scale up models or the dataset.
 
-To handle this, each client (`groqClient.js`, `nvidiaClient.js`) shares the
-throttle in `src/throttle.js`:
+To handle this, each client shares the throttle in
+`src/providers/http.js`:
 - Waits at least `GROQ_MIN_REQUEST_INTERVAL_MS` / `NVIDIA_MIN_REQUEST_INTERVAL_MS`
   (default 2200ms each) between every request to that provider, including judge calls.
 - On a 429, retries with exponential backoff (honoring the `Retry-After`

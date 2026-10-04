@@ -90,19 +90,26 @@ export function loadPromptRequest(filePath) {
   if (options.temperature !== undefined) mapped.temperature = options.temperature;
   if (options.num_predict !== undefined) mapped.max_completion_tokens = options.num_predict;
   if (options.repeat_penalty !== undefined) {
-    // No OpenAI equivalent. Groq/NVIDIA don't accept repeat_penalty, so this is
-    // genuinely dropped -- say so rather than implying it is in effect.
+    // Forwarded as-is. Ollama implements it natively; Groq/NVIDIA have no
+    // equivalent and will report that they are ignoring it (see
+    // SUPPORTED_PARAMS in providers/index.js), which is honest and once-per-run.
+    mapped.repeat_penalty = options.repeat_penalty;
     warnings.push(
-      `options.repeat_penalty=${options.repeat_penalty} has no OpenAI-compatible ` +
-        `equivalent and was dropped; sampling will not be penalised for repetition.`
+      `options.repeat_penalty=${options.repeat_penalty} is only implemented by Ollama. ` +
+        `It is applied on providers that support it and reported as ignored elsewhere.`
     );
   }
-  if (parsed.think === true) {
-    warnings.push(
-      `"think": true requests a reasoning pass. Neither Groq nor NVIDIA exposes ` +
-        `that switch through chat completions; thinking output, if any, arrives in ` +
-        `the response body and is not returned.`
-    );
+  if (parsed.think !== undefined) {
+    // Also native-only. `think: false` matters on Ollama: thinking models
+    // otherwise emit a thinking pass by default.
+    mapped.think = parsed.think;
+    if (parsed.think === true) {
+      warnings.push(
+        `"think": true requests a reasoning pass. Only Ollama exposes that switch ` +
+          `through chat completions; thinking output, if any, arrives in the ` +
+          `response body and is not scored.`
+      );
+    }
   }
 
   // --- images ----------------------------------------------------------

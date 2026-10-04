@@ -1,5 +1,5 @@
 import { normalizeCompletionContent } from "./content.js";
-import { createThrottledFetch, numFromEnv } from "./throttle.js";
+import { createThrottledFetch, numFromEnv } from "./http.js";
 
 const NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_MODELS_URL = "https://integrate.api.nvidia.com/v1/models";

@@ -56,8 +56,8 @@ export function resolveAssetPath(imagePath) {
  * Reads an image file and returns it as a base64 data URL.
  *
  * The returned string is exactly what the OpenAI-compatible `image_url` part
- * expects, and is what `content.js` / Langfuse's media upload already know how
- * to handle.
+ * expects, and is what the provider clients / Langfuse's media upload already
+ * know how to handle.
  *
  * @param {string} imagePath - repo-relative or absolute path to the image.
  * @param {object} [opts]

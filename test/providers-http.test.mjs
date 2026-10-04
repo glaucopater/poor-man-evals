@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseRetryAfter, numFromEnv, createThrottledFetch } from "../src/throttle.js";
+import { parseRetryAfter, numFromEnv, createThrottledFetch } from "../src/providers/http.js";
 
 // --------------------------------------------------------------- parseRetryAfter
 

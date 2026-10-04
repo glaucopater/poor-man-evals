@@ -40,8 +40,9 @@ const mock = createServer((req, res) => {
 await new Promise((resolve) => mock.listen(0, "127.0.0.1", resolve));
 const baseUrl = `http://127.0.0.1:${mock.address().port}`;
 
-// --- env must be set BEFORE any harness module is imported: groqClient.js reads
-// --- its throttle interval at import time, and tracing env must be in place.
+// --- env must be set BEFORE any harness module is imported: the provider
+// --- clients read their throttle interval at import time, and tracing env must
+// --- be in place.
 process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-migration-test";
 process.env.LANGFUSE_SECRET_KEY = "sk-lf-migration-test";
 process.env.LANGFUSE_BASE_URL = baseUrl;

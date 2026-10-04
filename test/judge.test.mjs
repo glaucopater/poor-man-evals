@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { judgeOutput, buildJudgeScore } from "../src/judge.js";
-import { normalizeCompletionContent } from "../src/content.js";
+import { normalizeCompletionContent } from "../src/providers/content.js";
 
 /**
  * Stubs global fetch so the judge never bills a real provider.

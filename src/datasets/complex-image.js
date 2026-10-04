@@ -78,3 +78,18 @@ export const IMAGE_INFO = {
 };
 
 notes.push(`1 case, image ${IMAGE_PATH} (${IMAGE_INFO.encodedSize} base64-encoded).`);
+
+// The captured prompt asks for num_predict=8192. Against a smaller context
+// window Ollama silently clamps it, and a verbose model then gets cut off
+// mid-JSON -- which looks like a wrong answer rather than a config problem.
+// Measured on this machine: a 1920x1080 image costs ~2.3k prompt tokens, so
+// 8192 output tokens needs >10k of context.
+if (request.options.max_completion_tokens >= 8192) {
+  notes.push(
+    `the prompt requests num_predict=${request.options.max_completion_tokens}, which needs ` +
+      `more context than a default 8k window once the image is tokenized (~2.3k tokens for ` +
+      `a 1920x1080 image). If responses come back cut off, raise OLLAMA_CONTEXT_LENGTH ` +
+      `(currently ${process.env.OLLAMA_CONTEXT_LENGTH ?? "unset"}) or lower num_predict in ` +
+      `complex_prompt.md. Cut-off responses are reported separately in the summary.`
+  );
+}

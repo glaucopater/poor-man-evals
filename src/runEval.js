@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { LangfuseClient } from "@langfuse/client";
 
-import { callModel, listModelIds, normalizeModel, PROVIDERS } from "./providers.js";
+import { callModel, listModelIds, normalizeModel, PROVIDERS } from "./providers/index.js";
 import { judgeOutput, buildJudgeScore, JUDGE_MODEL, JUDGE_PROVIDER } from "./judge.js";
 import { id as textId, dataset as textDataset } from "./datasets/text.js";
 import { id as imageId, dataset as imageDataset } from "./datasets/image.js";
@@ -17,7 +17,11 @@ import {
   notes as complexImageNotes,
 } from "./datasets/complex-image.js";
 import { scoreAgainstSchema } from "./jsonSchema.js";
-import { MODELS_UNDER_TEST, VISION_MODELS } from "./models.js";
+import {
+  MODELS_UNDER_TEST,
+  VISION_MODELS,
+  COMPLEX_IMAGE_MODELS,
+} from "./models.js";
 
 const langfuse = new LangfuseClient();
 
@@ -41,7 +45,9 @@ const DATASETS = {
   [textId]: { models: MODELS_UNDER_TEST.map(normalizeModel), items: textDataset },
   [imageId]: { models: VISION_MODELS.map(normalizeModel), items: imageDataset },
   [complexImageId]: {
-    models: VISION_MODELS.map(normalizeModel),
+    // Local models first: they are free and fast, so the run gives you signal
+    // before the hosted (billed, rate-limited) models get to it.
+    models: COMPLEX_IMAGE_MODELS.map(normalizeModel),
     items: complexImageDataset,
     notes: complexImageNotes,
   },
@@ -169,6 +175,11 @@ async function runOne(model, item, run) {
 
         let output = "";
         let usage = {};
+        // Providers that can report an unfinished generation set this; null means
+        // the provider doesn't tell us. Ollama clamps num_predict to the context
+        // window, so a truncated structured response is a real failure mode.
+        let truncated = null;
+        let doneReason = null;
 
         try {
           const result = await callModel({
@@ -183,6 +194,8 @@ async function runOne(model, item, run) {
           });
           output = result.content;
           usage = result.usage;
+          if ("truncated" in result) truncated = result.truncated;
+          if ("doneReason" in result) doneReason = result.doneReason;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           generation.update({ output: { error: message } }).end();
@@ -237,6 +250,30 @@ async function runOne(model, item, run) {
           );
         }
 
+        // Truncation is recorded separately from the scores above: a cut-off
+        // response is not "a wrong answer", it is an unusable one, and lumping it
+        // in would blame the model for a context-window configuration problem.
+        if (truncated !== null) {
+          langfuse.score.observation(
+            { otelSpan: generation.otelSpan },
+            {
+              name: "response-truncated",
+              value: truncated ? 1 : 0,
+              dataType: "NUMERIC",
+              comment: truncated
+                ? `Provider stopped generation early (done_reason: ${doneReason ?? "length"}). ` +
+                    `The output is incomplete -- raise the context window or lower num_predict.`
+                : `Provider finished normally (done_reason: ${doneReason ?? "stop"}).`,
+            }
+          );
+        }
+
+        span.update({
+          output: { content: output },
+          ...(judged.judgeFailed ? { level: "WARNING" } : {}),
+          ...(truncated ? { level: "WARNING" } : {}),
+        });
+
         span.end();
 
         return {
@@ -246,6 +283,7 @@ async function runOne(model, item, run) {
           output,
           judged,
           schemaScore,
+          truncated,
         };
       })
   );
@@ -262,7 +300,7 @@ async function runOne(model, item, run) {
  * with a real 1-token completion probe per provider, which is what actually
  * catches a 401/403 before the run starts.
  */
-async function assertModelsAvailable(models) {
+async function assertModelsAvailable(models, { requiresVision = false } = {}) {
   console.log("Checking model availability...");
 
   const byProvider = new Map();
@@ -334,6 +372,31 @@ async function assertModelsAvailable(models) {
     process.exit(1);
   }
 
+  // Local runtimes can report per-model capabilities, which lets us catch a
+  // text-only model before it silently ignores the image and gets graded as if
+  // it had looked. Only providers exposing the optional lister are checked.
+  if (requiresVision) {
+    for (const provider of new Set(models.map((m) => m.provider))) {
+      const detailsFn = PROVIDERS[provider]?.listModelDetails;
+      if (!detailsFn) continue;
+      try {
+        const available = await detailsFn();
+        for (const model of models.filter((m) => m.provider === provider)) {
+          const info = available.find((d) => d.id === model.id);
+          if (info && !info.vision) {
+            console.error(
+              `\n  - ${model.id} (${PROVIDERS[provider].label}) is not vision-capable, ` +
+                `but this dataset sends it an image. It will ignore the image and be ` +
+                `graded on the prompt alone. Remove it, or pull a vision model.`
+            );
+          }
+        }
+      } catch {
+        /* capability reporting is a nicety; never fail the run over it */
+      }
+    }
+  }
+
   console.log("All configured models are available and reachable.\n");
 }
 
@@ -389,7 +452,7 @@ async function main() {
   );
   console.log(`Langfuse session: ${run.sessionId}`);
 
-  await assertModelsAvailable(models);
+  await assertModelsAvailable(models, { requiresVision: items.some((item) => item.image) });
 
   const results = [];
 
@@ -471,6 +534,21 @@ async function main() {
     for (const r of schemaResults.filter((x) => x.schemaScore.value !== 1)) {
       console.log(`  - ${r.itemId}: ${r.schemaScore.comment}`);
     }
+  }
+
+  // Flag responses the provider cut short. These usually mean the context window
+  // was too small for the requested num_predict, not that the model did badly.
+  const cutShort = results.filter((r) => !r.error && r.truncated === true);
+  if (cutShort.length > 0) {
+    console.log(`\n=== Truncated responses ===`);
+    for (const r of cutShort) {
+      console.log(`  - ${r.model} (${r.provider}) on "${r.itemId}"`);
+    }
+    console.log(
+      `  The provider stopped generating before the answer was finished. Scores for ` +
+        `these items are unreliable: raise the context window (OLLAMA_CONTEXT_LENGTH) ` +
+        `or lower num_predict in complex_prompt.md.`
+    );
   }
 }
 
