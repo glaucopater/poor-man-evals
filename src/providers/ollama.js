@@ -23,7 +23,46 @@ import { normalizeCompletionContent } from "./content.js";
 import { createThrottledFetch, numFromEnv } from "./http.js";
 
 // Strip a trailing slash so `${BASE}/api/chat` never doubles up.
-const BASE_URL = (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/+$/, "");
+export const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(
+  /\/+$/,
+  ""
+);
+
+/**
+ * Is the configured Ollama server on this machine?
+ *
+ * Ollama is the one provider that can be either local or remote: the same
+ * client and the same `provider: "ollama"` tag cover `ollama serve` on this
+ * laptop, a shared GPU box on the LAN, and a hosted endpoint. That matters for
+ * the eval, because a "local" run is free and private while a remote one is
+ * neither, and the output should not imply a guarantee the config does not make.
+ *
+ * Recognises the usual loopback spellings. Anything else -- a hostname, a LAN
+ * IP, a public address -- is reported as remote, which is the conservative
+ * answer: we would rather label a genuinely-local server "remote" than promise
+ * local processing that is not happening.
+ */
+export function isLoopbackEndpoint(baseUrl = OLLAMA_BASE_URL) {
+  let host;
+  try {
+    // URL.hostname keeps IPv6 literals bracketed ("[::1]"), so strip them before
+    // comparing -- otherwise the loopback check silently misses IPv6.
+    host = new URL(baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  } catch {
+    return false; // unparseable: assume remote rather than claim "local"
+  }
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
+  // 0.0.0.0 is a bind-all address; a client pointed at it means this machine.
+  if (host === "0.0.0.0" || host === "::") return true;
+  if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true;
+  return false;
+}
+
+/** `"local"` or `"remote"` -- the label suffix shown in eval output. */
+export function ollamaLocality() {
+  return isLoopbackEndpoint() ? "local" : "remote";
+}
 
 // A local server has no rate limit worth respecting, so the default interval is
 // 0. Retries are still on: a cold model load can drop a connection.
@@ -136,7 +175,7 @@ export async function callOllama({
     ...(keep_alive !== undefined ? { keep_alive: keep_alive } : {}),
   };
 
-  const res = await ollamaFetch(`${BASE_URL}/api/chat`, {
+  const res = await ollamaFetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -147,7 +186,7 @@ export async function callOllama({
     throw new Error(
       `Ollama API error (${res.status} on model "${model}"): ${errText}\n` +
         `Ollama must be running: \`ollama serve\`, and the model pulled: ` +
-        `\`ollama pull ${model}\`. Check OLLAMA_BASE_URL (currently ${BASE_URL}).`
+        `\`ollama pull ${model}\`. Check OLLAMA_BASE_URL (currently ${OLLAMA_BASE_URL}).`
     );
   }
 
@@ -189,7 +228,7 @@ export async function callOllama({
  * @returns {Promise<Set<string>>}
  */
 export async function listOllamaModelIds() {
-  const res = await ollamaFetch(`${BASE_URL}/api/tags`, {
+  const res = await ollamaFetch(`${OLLAMA_BASE_URL}/api/tags`, {
     headers: { Accept: "application/json" },
   });
 
@@ -197,7 +236,7 @@ export async function listOllamaModelIds() {
     const errText = await res.text();
     throw new Error(
       `Ollama API error (${res.status} listing models): ${errText}\n` +
-        `Is Ollama running? \`ollama serve\`. Check OLLAMA_BASE_URL (currently ${BASE_URL}).`
+        `Is Ollama running? \`ollama serve\`. Check OLLAMA_BASE_URL (currently ${OLLAMA_BASE_URL}).`
     );
   }
 
@@ -218,7 +257,7 @@ export async function listOllamaModelIds() {
  * @returns {Promise<Array<{id: string, vision: boolean, thinking: boolean}>>}
  */
 export async function listOllamaModelDetails() {
-  const res = await ollamaFetch(`${BASE_URL}/api/tags`, { headers: { Accept: "application/json" } });
+  const res = await ollamaFetch(`${OLLAMA_BASE_URL}/api/tags`, { headers: { Accept: "application/json" } });
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(`Ollama API error (${res.status} listing models): ${errText}`);

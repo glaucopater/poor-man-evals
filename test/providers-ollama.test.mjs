@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  isLoopbackEndpoint,
+  ollamaLocality,
   toOllamaMessages,
   toOllamaFormat,
   listOllamaModelIds,
@@ -446,4 +448,71 @@ test("judge: a truncated verdict is reported as truncation, not as bad JSON", as
   assert.match(judged.reasoning, /truncated at 512 tokens/);
   assert.match(judged.reasoning, /JUDGE_MAX_COMPLETION_TOKENS/);
   assert.doesNotMatch(judged.reasoning, /Failed to parse/);
+});
+
+// ---------------------------------------------------------------- locality
+
+test("isLoopbackEndpoint: recognises the usual local spellings", () => {
+  for (const url of [
+    "http://localhost:11434",
+    "http://LOCALHOST:11434",
+    "http://127.0.0.1:11434",
+    "http://127.1.2.3:11434",
+    "http://[::1]:11434",
+    "http://0.0.0.0:11434",
+    "http://ollama.localhost:11434",
+  ]) {
+    assert.equal(isLoopbackEndpoint(url), true, url);
+  }
+});
+
+test("isLoopbackEndpoint: anything else is remote", () => {
+  // Ollama can point at a shared GPU box, so an address that is merely
+  // "not localhost" must not be reported as local.
+  for (const url of [
+    "http://gpu-box.lan:11434",
+    "https://ollama.example.com",
+    "http://10.0.0.5:11434",
+    "http://192.168.1.50:11434",
+    "http://[2001:db8::1]:11434",
+  ]) {
+    assert.equal(isLoopbackEndpoint(url), false, url);
+  }
+});
+
+test("isLoopbackEndpoint: unparseable input is remote, not a false 'local' claim", () => {
+  assert.equal(isLoopbackEndpoint("not a url"), false);
+  assert.equal(isLoopbackEndpoint(""), false);
+});
+
+test("provider labels distinguish local from remote ollama", async () => {
+  const local = await import("../src/providers/index.js?loc=1");
+  assert.equal(local.PROVIDERS.ollama.label, "Ollama (local)");
+  assert.equal(local.providerTag("ollama"), "ollama/local");
+  assert.equal(local.providerEndpoint("ollama"), "http://localhost:11434");
+});
+
+test("hosted providers carry no locality suffix (they are always remote)", async () => {
+  const p = await import("../src/providers/index.js?loc=2");
+  assert.equal(p.providerTag("groq"), "groq");
+  assert.equal(p.providerTag("nvidia"), "nvidia");
+  assert.equal(p.providerEndpoint("groq"), undefined);
+  assert.equal(p.providerLabel("groq"), "Groq");
+});
+
+test("a remote OLLAMA_BASE_URL flips the label to remote", async () => {
+  const saved = process.env.OLLAMA_BASE_URL;
+  process.env.OLLAMA_BASE_URL = "http://gpu-box.lan:11434";
+  try {
+    // Re-import with a distinct query so the module re-evaluates against the
+    // new endpoint. Its dependencies are cached, but the ollama client reads
+    // the base URL from env at evaluation time.
+    const remote = await import("../src/providers/ollama.js?remote=1");
+    assert.equal(remote.ollamaLocality(), "remote");
+    assert.equal(remote.isLoopbackEndpoint(), false);
+    assert.equal(remote.OLLAMA_BASE_URL, "http://gpu-box.lan:11434");
+  } finally {
+    if (saved === undefined) delete process.env.OLLAMA_BASE_URL;
+    else process.env.OLLAMA_BASE_URL = saved;
+  }
 });

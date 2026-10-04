@@ -14,7 +14,15 @@ import { randomUUID } from "node:crypto";
 import { propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { LangfuseClient } from "@langfuse/client";
 
-import { callModel, listModelIds, normalizeModel, PROVIDERS } from "./providers/index.js";
+import {
+  callModel,
+  listModelIds,
+  normalizeModel,
+  providerLabel,
+  providerTag,
+  providerEndpoint,
+  PROVIDERS,
+} from "./providers/index.js";
 import { judgeOutput, buildJudgeScore, JUDGE_MODEL, JUDGE_PROVIDER } from "./judge.js";
 import { id as textId, dataset as textDataset } from "./datasets/text.js";
 import { id as imageId, dataset as imageDataset } from "./datasets/image.js";
@@ -162,11 +170,15 @@ async function runOne(model, item, run) {
     {
       traceName,
       sessionId: run.sessionId,
-      tags: [`dataset:${run.datasetId}`, `provider:${model.provider}`],
+      // providerTag, not the bare provider name: "ollama/local" and
+      // "ollama/remote" must be separable in the Langfuse UI, because a local
+      // run is free and private and a remote one is neither.
+      tags: [`dataset:${run.datasetId}`, `provider:${providerTag(model.provider)}`],
       metadata: {
         datasetId: item.id,
         model: model.id,
         provider: model.provider,
+        providerTag: providerTag(model.provider),
         hasImage: String(Boolean(item.image)),
       },
     },
@@ -474,13 +486,20 @@ async function main() {
     process.exit(1);
   }
 
-  const providers = [...new Set(models.map((m) => m.provider))].join(", ");
+  const providers = [...new Set(models.map((m) => m.provider))];
   const run = { sessionId: newRunId(), datasetId };
   console.log(`Config: ${profile === "default" ? "defaults" : `profile "${profile}"`} (${configSource})`);
   console.log(
-    `Dataset: ${datasetId} (${items.length} case(s), ${models.length} model(s) via ${providers})`
+    `Dataset: ${datasetId} (${items.length} case(s), ${models.length} model(s) via ` +
+      `${providers.map(providerTag).join(", ")})`
   );
-  console.log(`Judge: ${config.judge.model} (${config.judge.provider})`);
+  // Ollama can be local or remote, so say which -- "local" is what makes a run
+  // free and private, and that is not something the provider name can promise.
+  for (const name of providers) {
+    const endpoint = providerEndpoint(name);
+    if (endpoint) console.log(`  ${providerLabel(name)} at ${endpoint}`);
+  }
+  console.log(`Judge: ${config.judge.model} (${providerTag(config.judge.provider)})`);
   console.log(`Langfuse session: ${run.sessionId}`);
 
   await assertModelsAvailable(models, { requiresVision: items.some((item) => item.image) });
@@ -489,7 +508,7 @@ async function main() {
 
   for (const model of models) {
     for (const item of items) {
-      console.log(`Running ${model.id} (${model.provider}) on "${item.id}"...`);
+      console.log(`Running ${model.id} (${providerTag(model.provider)}) on "${item.id}"...`);
       // runOne already handles model-call and judge-call failures per item.
       // This is the last line of defence: an unexpected throw (a Langfuse bug,
       // a bad payload) must not abort the remaining 50-odd runs with every span
@@ -506,7 +525,7 @@ async function main() {
 
   console.log("\n=== Eval Summary ===");
   for (const r of results) {
-    const label = `[${r.model} (${r.provider})]`;
+    const label = `[${r.model} (${providerTag(r.provider)})]`;
     if (r.error) {
       console.log(`${label} ${r.itemId}: ERROR - ${r.error}`);
     } else if (!Number.isFinite(r.judged.score)) {
@@ -527,7 +546,7 @@ async function main() {
       continue;
     }
     // Key on id + provider so the same model id served by two providers stays distinct.
-    const key = `${r.model} (${r.provider})`;
+    const key = `${r.model} (${providerTag(r.provider)})`;
     avgByModel[key] ??= [];
     avgByModel[key].push(r.judged.score);
   }
@@ -553,7 +572,7 @@ async function main() {
   if (schemaResults.length > 0) {
     const byModel = {};
     for (const r of schemaResults) {
-      const key = `${r.model} (${r.provider})`;
+      const key = `${r.model} (${providerTag(r.provider)})`;
       byModel[key] ??= [];
       byModel[key].push(r.schemaScore.value);
     }

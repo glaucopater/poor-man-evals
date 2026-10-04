@@ -8,13 +8,34 @@
 // OpenAI-compatible providers.
 import { callGroq, listGroqModelIds } from "./groq.js";
 import { callNvidia, listNvidiaModelIds } from "./nvidia.js";
-import { callOllama, listOllamaModelIds, listOllamaModelDetails } from "./ollama.js";
+import {
+  callOllama,
+  listOllamaModelIds,
+  listOllamaModelDetails,
+  ollamaLocality,
+  OLLAMA_BASE_URL,
+} from "./ollama.js";
+
+/**
+ * Ollama is the only provider that can be local or remote, so its label
+ * carries the locality rather than assuming one. The other two are always
+ * hosted APIs.
+ */
+const ollama = () => {
+  const locality = ollamaLocality();
+  return {
+    label: `Ollama (${locality})`,
+    // Compact form for table cells and summary keys, where a nested
+    // "Ollama (local)" inside parentheses reads badly: [model (ollama/local)].
+    tag: `ollama/${locality}`,
+  };
+};
 
 export const PROVIDERS = {
-  groq: { label: "Groq", call: callGroq, listModelIds: listGroqModelIds },
-  nvidia: { label: "NVIDIA NIM", call: callNvidia, listModelIds: listNvidiaModelIds },
+  groq: { label: "Groq", tag: "groq", call: callGroq, listModelIds: listGroqModelIds },
+  nvidia: { label: "NVIDIA NIM", tag: "nvidia", call: callNvidia, listModelIds: listNvidiaModelIds },
   ollama: {
-    label: "Ollama (local)",
+    ...ollama(),
     call: callOllama,
     listModelIds: listOllamaModelIds,
     // Optional: lets runEval check vision capability before spending a run on a
@@ -22,6 +43,26 @@ export const PROVIDERS = {
     listModelDetails: listOllamaModelDetails,
   },
 };
+
+/** Human-readable provider name, e.g. "Ollama (local)" or "NVIDIA NIM". */
+export function providerLabel(name) {
+  return resolveProvider(name).label;
+}
+
+/**
+ * Compact provider name for tables and summary keys, e.g. "ollama/local".
+ *
+ * Locality only shows up for providers where it can change: Groq and NVIDIA are
+ * always remote, so tagging every hosted model "remote" would be noise.
+ */
+export function providerTag(name) {
+  return resolveProvider(name).tag;
+}
+
+/** The endpoint a local-capable provider is pointed at, for the startup banner. */
+export function providerEndpoint(name) {
+  return name === "ollama" ? OLLAMA_BASE_URL : undefined;
+}
 
 // Used for bare-string model entries in models.js.
 export const DEFAULT_PROVIDER = "groq";
