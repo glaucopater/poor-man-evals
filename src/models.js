@@ -4,6 +4,12 @@
 // works and defaults to Groq, but tag entries explicitly once you mix
 // providers.
 //
+// An entry may also carry per-model generation parameters that are forwarded
+// only for that model, e.g. `{ id, provider, reasoning_effort: "max" }`. They
+// are passed to the provider client as-is (see normalizeModel in
+// src/providers/index.js), so they must be names the provider's client accepts;
+// unsupported ones are reported once per run and dropped.
+//
 // Edit freely -- any *chat-capable* model id on that provider's account works.
 // The NVIDIA catalogs also list embeddings, rerankers, safety classifiers,
 // OCR/parse models and reward models; those aren't chat completions and will
@@ -16,14 +22,18 @@ export const MODELS_UNDER_TEST = [
   { id: "openai/gpt-oss-20b", provider: "groq" },
 
   // --- NVIDIA NIM ---
-  { id: "deepseek-ai/deepseek-v4.1-flash", provider: "nvidia" },
-  { id: "moonshotai/kimi-k3", provider: "nvidia" },
+  // Only ids verified to actually answer on this account are listed. NVIDIA's
+  // GET /v1/models also returns ids that then 404 ("Function not found for
+  // account") at inference: microsoft/phi-3-vision-128k-instruct,
+  // moonshotai/kimi-k2.6, mistralai/mistral-large-2-instruct, 01-ai/yi-large and
+  // zyphra/zamba2-7b-instruct were all listed but dead, and
+  // deepseek-ai/deepseek-v4.1-flash never answered within 5 minutes. Getting an
+  // id into this list means it passed a real 1-token completion, not that it
+  // appeared in the catalog.
   { id: "z-ai/glm-5.3", provider: "nvidia" },
   { id: "nvidia/nemotron-3-super-120b-a12b", provider: "nvidia" },
-  { id: "mistralai/mistral-large-2-instruct", provider: "nvidia" },
+  { id: "nvidia/nemotron-3.5-lightning-30b-a3b", provider: "nvidia" },
   { id: "google/gemma-4-31b-it", provider: "nvidia" },
-  { id: "01-ai/yi-large", provider: "nvidia" },
-  { id: "zyphra/zamba2-7b-instruct", provider: "nvidia" },
 
   // Same model as the Groq entry above, on a second provider -- the summary
   // prints `openai/gpt-oss-20b (groq)` next to `openai/gpt-oss-20b (nvidia)`
@@ -32,11 +42,13 @@ export const MODELS_UNDER_TEST = [
 ];
 
 // Image dataset only. Add vision-capable models here, tagged with their provider.
+// Same rule as above: listed by NVIDIA is not the same as usable.
+// microsoft/phi-3-vision-128k-instruct 404'd and meta/llama-3.2-90b-vision-instruct
+// hung for 15 minutes, so both were dropped.
 export const VISION_MODELS = [
   { id: "qwen/qwen3.8-27b", provider: "groq" },
-  { id: "meta/llama-3.2-90b-vision-instruct", provider: "nvidia" },
+  { id: "nvidia/nemotron-3.5-super-vl-120b-a12b", provider: "nvidia", reasoning_effort: "max" },
   { id: "meta/llama-3.2-11b-vision-instruct", provider: "nvidia" },
-  { id: "microsoft/phi-3-vision-128k-instruct", provider: "nvidia" },
 ];
 
 // Locally installed Ollama models (provider: "ollama"). No API key, no rate

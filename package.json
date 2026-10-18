@@ -12,6 +12,7 @@
     "eval:dry": "node scripts/eval-dry.mjs",
     "test": "node --test test/*.test.mjs",
     "verify:langfuse": "node scripts/verify-langfuse.mjs",
+    "langfuse:report": "node scripts/langfuse-report.mjs",
     "check": "yarn test && yarn verify:langfuse"
   },
   "license": "MIT",

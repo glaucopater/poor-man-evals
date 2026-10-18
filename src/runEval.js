@@ -210,9 +210,12 @@ async function runOne(model, item, run) {
             provider: model.provider,
             model: model.id,
             messages: [userMessage],
-            // Per-item generation options (temperature, max tokens) and
-            // structured-output spec, when the dataset supplies them. Datasets
-            // without these keep the client defaults.
+            // Per-model generation options from models.js (e.g. a
+            // reasoning_effort pinned to one model), then per-item generation
+            // options (temperature, max tokens) and the structured-output spec,
+            // when the dataset supplies them. Items override model entries, and
+            // datasets without these keep the client defaults.
+            ...(model.params ?? {}),
             ...(item.options ?? {}),
             ...(item.responseFormat ? { response_format: item.responseFormat } : {}),
           });
