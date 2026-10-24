@@ -26,6 +26,9 @@ const nvidiaFetch = createThrottledFetch({
  * @param {number} [params.top_p]
  * @param {object} [params.response_format] - OpenAI structured-output spec,
  *   e.g. `{type: "json_schema", json_schema: {name, strict, schema}}`.
+ * @param {string} [params.reasoning_effort] - Reasoning budget for models that
+ *   expose one (e.g. "max"), forwarded verbatim. Omitted when undefined so
+ *   models that reject the field get the plain request they expect.
  * @returns {Promise<{content: string, usage: object, raw: object}>}
  */
 export async function callNvidia({
@@ -35,6 +38,7 @@ export async function callNvidia({
   max_tokens = 2048,
   top_p = 0.95,
   response_format,
+  reasoning_effort,
 }) {
   if (!process.env.NVIDIA_API_KEY) {
     throw new Error("NVIDIA_API_KEY is not set. Copy .env.example to .env and fill it in.");
@@ -56,6 +60,7 @@ export async function callNvidia({
       // Omitted entirely when undefined, so providers that reject an explicit
       // null still get the plain request they expect.
       ...(response_format ? { response_format } : {}),
+      ...(reasoning_effort ? { reasoning_effort } : {}),
     }),
   });
 

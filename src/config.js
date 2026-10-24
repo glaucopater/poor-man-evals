@@ -61,6 +61,7 @@ const LANGFUSE_SCHEMA = {
   base_url: "string",
   environment: "string",
   release: "string",
+  projects: "list",
 };
 
 /**
@@ -101,8 +102,9 @@ const DEFAULTS = {
     groq: { min_request_interval_ms: 2200, max_retries: 5 },
     nvidia: { min_request_interval_ms: 2200, max_retries: 5 },
     ollama: { base_url: "http://localhost:11434", min_request_interval_ms: 0, max_retries: 2 },
+    gemini: { min_request_interval_ms: 0, max_retries: 3 },
   },
-  langfuse: { base_url: "https://cloud.langfuse.com", environment: "development" },
+  langfuse: { base_url: "https://cloud.langfuse.com", environment: "development", projects: ["default"] },
 };
 
 /**
@@ -354,6 +356,7 @@ const ENV_OVERRIDES = [
   { var: "LANGFUSE_BASE_URL", path: ["langfuse", "base_url"], type: "string" },
   { var: "LANGFUSE_TRACING_ENVIRONMENT", path: ["langfuse", "environment"], type: "string" },
   { var: "LANGFUSE_RELEASE", path: ["langfuse", "release"], type: "string" },
+  { var: "LANGFUSE_PROJECTS", path: ["langfuse", "projects"], type: "list" },
 ];
 
 /** Writes a value at a nested path, creating intermediate objects as needed. */
@@ -419,6 +422,7 @@ const PROJECTION = [
   ["LANGFUSE_BASE_URL", (c) => c.langfuse.base_url],
   ["LANGFUSE_TRACING_ENVIRONMENT", (c) => c.langfuse.environment],
   ["LANGFUSE_RELEASE", (c) => c.langfuse.release],
+  ["LANGFUSE_PROJECTS", (c) => (c.langfuse.projects ?? ["default"]).join(",")],
 ];
 
 /** Writes resolved values into process.env without overwriting real overrides. */
@@ -442,6 +446,40 @@ export function projectToEnv(config, env = process.env) {
  * It must therefore be imported BEFORE instrumentation.js, which reads
  * LANGFUSE_* at import time.
  */
+
+
+/**
+ * Resolves the configured Langfuse projects into concrete credentials.
+ */
+export function resolveLangfuseProjects(config, env = process.env) {
+  const langfuse = config?.langfuse ?? {};
+  const names = Array.isArray(langfuse.projects) && langfuse.projects.length
+    ? langfuse.projects
+    : ["default"];
+  const sharedBaseUrl = langfuse.base_url ?? env.LANGFUSE_BASE_URL ?? "https://cloud.langfuse.com";
+  const environment = langfuse.environment ?? env.LANGFUSE_TRACING_ENVIRONMENT ?? "development";
+  const release = langfuse.release ?? env.LANGFUSE_RELEASE;
+
+  return names.map((name) => {
+    const upper = String(name).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    const isDefault = String(name).toLowerCase() === "default";
+    const publicKeyEnv = isDefault ? "LANGFUSE_PUBLIC_KEY" : "LANGFUSE_" + upper + "_PUBLIC_KEY";
+    const secretKeyEnv = isDefault ? "LANGFUSE_SECRET_KEY" : "LANGFUSE_" + upper + "_SECRET_KEY";
+    const baseUrlEnv = isDefault ? "LANGFUSE_BASE_URL" : "LANGFUSE_" + upper + "_BASE_URL";
+
+    const publicKey = env[publicKeyEnv];
+    const secretKey = env[secretKeyEnv];
+    if (!publicKey || !secretKey) {
+      throw new Error(
+        "Missing Langfuse credentials for project " + JSON.stringify(name) +
+        ": set " + publicKeyEnv + " and " + secretKeyEnv + " in .env."
+      );
+    }
+    const baseUrl = env[baseUrlEnv] ?? sharedBaseUrl;
+    return { name, publicKey, secretKey, baseUrl, environment, release };
+  });
+}
+
 const resolved = resolveConfig();
 projectToEnv(resolved.config);
 

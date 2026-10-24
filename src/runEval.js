@@ -5,9 +5,9 @@ import "./config.js";
 
 // Must be imported before anything else that creates spans: registers the
 // Langfuse OTel span processor with the Node SDK.
-import { langfuseSpanProcessor } from "./instrumentation.js";
+import { langfuseSpanProcessors } from "./instrumentation.js";
 
-import { config, profile, configSource } from "./config.js";
+import { config, profile, configSource, resolveLangfuseProjects } from "./config.js";
 import { formatDuration, formatItemOutcome, formatEta, summarizeTimings } from "./format.js";
 
 import { randomUUID } from "node:crypto";
@@ -32,13 +32,36 @@ import {
   dataset as complexImageDataset,
   notes as complexImageNotes,
 } from "./datasets/complex-image.js";
+import { id as freepromptId, dataset as freepromptDataset } from "./datasets/freeprompt.js";
 import { scoreAgainstSchema } from "./jsonSchema.js";
 import {
   CHAT_MODELS,
   VISION_MODELS_ALL,
+  GEMINI_MODELS,
 } from "./models.js";
 
-const langfuse = new LangfuseClient();
+const langfuseProjects = resolveLangfuseProjects(config, process.env);
+const langfuseClients = langfuseProjects.map(
+  (project) =>
+    new LangfuseClient({
+      publicKey: project.publicKey,
+      secretKey: project.secretKey,
+      baseUrl: project.baseUrl,
+    })
+);
+
+// Fan-out facade: every score and flush is forwarded to all configured projects,
+// so a single run lands in each of them.
+const langfuse = {
+  score: {
+    observation: (otelSpanArg, score) => {
+      for (const client of langfuseClients) client.score.observation(otelSpanArg, score);
+    },
+  },
+  async flush() {
+    await Promise.all(langfuseClients.map((client) => client.flush()));
+  },
+};
 
 /**
  * Providers to actually run, comma-separated (e.g. `groq` or `groq,nvidia`).
@@ -65,6 +88,10 @@ const DATASETS = {
     models: VISION_MODELS_ALL.map(normalizeModel),
     items: complexImageDataset,
     notes: complexImageNotes,
+  },
+  [freepromptId]: {
+    models: GEMINI_MODELS.map(normalizeModel),
+    items: freepromptDataset,
   },
 };
 
@@ -210,9 +237,12 @@ async function runOne(model, item, run) {
             provider: model.provider,
             model: model.id,
             messages: [userMessage],
-            // Per-item generation options (temperature, max tokens) and
-            // structured-output spec, when the dataset supplies them. Datasets
-            // without these keep the client defaults.
+            // Per-model generation options from models.js (e.g. a
+            // reasoning_effort pinned to one model), then per-item generation
+            // options (temperature, max tokens) and the structured-output spec,
+            // when the dataset supplies them. Items override model entries, and
+            // datasets without these keep the client defaults.
+            ...(model.params ?? {}),
             ...(item.options ?? {}),
             ...(item.responseFormat ? { response_format: item.responseFormat } : {}),
           });
@@ -663,5 +693,5 @@ main()
   })
   .finally(async () => {
     await langfuse.flush();
-    await langfuseSpanProcessor.forceFlush();
+    await Promise.all(langfuseSpanProcessors.map((processor) => processor.forceFlush()));
   });

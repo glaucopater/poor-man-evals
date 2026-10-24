@@ -8,6 +8,7 @@
 // OpenAI-compatible providers.
 import { callGroq, listGroqModelIds } from "./groq.js";
 import { callNvidia, listNvidiaModelIds } from "./nvidia.js";
+import { callGemini, listGeminiModelIds } from "./gemini.js";
 import {
   callOllama,
   listOllamaModelIds,
@@ -34,6 +35,7 @@ const ollama = () => {
 export const PROVIDERS = {
   groq: { label: "Groq", tag: "groq", call: callGroq, listModelIds: listGroqModelIds },
   nvidia: { label: "NVIDIA NIM", tag: "nvidia", call: callNvidia, listModelIds: listNvidiaModelIds },
+  gemini: { label: "Google Gemini", tag: "gemini", call: callGemini, listModelIds: listGeminiModelIds },
   ollama: {
     ...ollama(),
     call: callOllama,
@@ -79,7 +81,23 @@ export const DEFAULT_PROVIDER = "groq";
  */
 const SUPPORTED_PARAMS = {
   groq: ["model", "messages", "temperature", "max_completion_tokens", "top_p", "response_format"],
-  nvidia: ["model", "messages", "temperature", "max_completion_tokens", "top_p", "response_format"],
+  nvidia: [
+    "model",
+    "messages",
+    "temperature",
+    "max_completion_tokens",
+    "top_p",
+    "response_format",
+    "reasoning_effort",
+  ],
+  gemini: [
+    "model",
+    "messages",
+    "temperature",
+    "max_completion_tokens",
+    "top_p",
+    "response_format",
+  ],
   ollama: [
     "model",
     "messages",
@@ -97,13 +115,18 @@ const SUPPORTED_PARAMS = {
 const warnedDrops = new Set();
 
 /**
- * Normalizes a `models.js` entry into `{ id, provider }`. Accepts either a bare
- * model id (assumed to run on DEFAULT_PROVIDER) or an explicit
- * `{ id, provider }` object.
+ * Normalizes a `models.js` entry into `{ id, provider, params? }`. Accepts either
+ * a bare model id (assumed to run on DEFAULT_PROVIDER) or an explicit
+ * `{ id, provider }` object. Any extra keys on the entry are collected under
+ * `params` and forwarded to the provider client for that model only, so an entry
+ * can pin a per-model generation option such as `reasoning_effort: "max"`.
+ * `params` is omitted entirely when there are none, so plain entries keep the
+ * exact `{ id, provider }` shape callers and tests expect.
  */
 export function normalizeModel(entry) {
   if (typeof entry === "string") return { id: entry, provider: DEFAULT_PROVIDER };
-  return { id: entry.id, provider: entry.provider ?? DEFAULT_PROVIDER };
+  const { id, provider = DEFAULT_PROVIDER, ...params } = entry;
+  return Object.keys(params).length > 0 ? { id, provider, params } : { id, provider };
 }
 
 export function resolveProvider(name) {

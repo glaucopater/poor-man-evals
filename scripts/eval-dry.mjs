@@ -37,14 +37,19 @@ const child = spawn(process.execPath, ["src/runEval.js", ...process.argv.slice(2
   stdio: "inherit",
   env: {
     ...process.env,
-    // The one thing that changes: where telemetry goes.
+    ...Object.fromEntries(
+      Object.keys(process.env)
+        .filter((k) => /^LANGFUSE(_[A-Z0-9_]+)?_BASE_URL$/.test(k))
+        .map((k) => [k, baseUrl])
+    ),
     LANGFUSE_BASE_URL: baseUrl,
-    // Placeholder credentials, so a dry run needs no real project to exist. The
-    // mock ignores them and they never leave the machine.
-    LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY || "pk-dry-run-not-a-real-key",
-    LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY || "sk-dry-run-not-a-real-key",
-    // An obvious environment name, so if anything ever did leak it would be
-    // identifiable in the UI rather than blending into real runs.
+    ...Object.fromEntries(
+      Object.keys(process.env)
+        .filter((k) => /^LANGFUSE(_[A-Z0-9_]+)?_(PUBLIC|SECRET)_KEY$/.test(k))
+        .map((k) => [k, k.includes("PUBLIC") ? "pk-dry-run-not-a-real-key" : "sk-dry-run-not-a-real-key"])
+    ),
+    LANGFUSE_PUBLIC_KEY: "pk-dry-run-not-a-real-key",
+    LANGFUSE_SECRET_KEY: "sk-dry-run-not-a-real-key",
     LANGFUSE_TRACING_ENVIRONMENT: "dry-run",
   },
 });

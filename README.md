@@ -75,6 +75,56 @@ Behaviours the harness relies on:
 
 Run `yarn verify:langfuse` to check all of the above against a local mock endpoint (no provider calls, no writes to your project). Run `yarn eval:dry` to exercise a real eval against the same mock, so nothing reaches your project.
 
+### Multiple Langfuse projects
+
+A run can be shipped to more than one Langfuse project at once -- useful for
+keeping a personal project and a shared one in sync. List the project names under
+`langfuse.projects` in `eval.config.yaml`:
+
+```yaml
+langfuse:
+  base_url: https://cloud.langfuse.com
+  environment: development
+  projects: [default, freeprompt]
+```
+
+Names map to environment variables by convention:
+
+| project name | public key env | secret key env |
+|---|---|---|
+| `default` | `LANGFUSE_PUBLIC_KEY` | `LANGFUSE_SECRET_KEY` |
+| `freeprompt` | `LANGFUSE_FREEPROMPT_PUBLIC_KEY` | `LANGFUSE_FREEPROMPT_SECRET_KEY` |
+| `<name>` | `LANGFUSE_<NAME>_PUBLIC_KEY` | `LANGFUSE_<NAME>_SECRET_KEY` |
+
+Every span, score and media upload is then written to *each* project. Base URL,
+environment and release are shared unless a per-project `LANGFUSE_<NAME>_BASE_URL`
+is set. With no `projects` key the harness behaves exactly as before and writes
+to the single `default` project.
+### Reading results back
+
+Every run prints its per-model averages, tokens and truncation at the end. To
+re-derive those from Langfuse afterwards — across several runs, or once the
+terminal is gone — use `yarn langfuse:report`:
+
+```bash
+yarn langfuse:report                       # last 5 eval sessions
+yarn langfuse:report --last 10
+yarn langfuse:report --session eval-2026-10-18T18-29-11-926Z-9218e2d4
+yarn langfuse:report --dataset image       # only dataset:image runs
+yarn langfuse:report --json                # machine-readable aggregate
+```
+
+It writes nothing and reads `LANGFUSE_*` from `.env`. The important part is the
+join: model name, usage and latency live on the child **generation** observation,
+and `llm-judge-score` / `json-schema-valid` / `response-truncated` are attached to
+that same generation — not to the trace root span. A UI export of root spans
+therefore shows `llm-judge-score: null` and empty `usageDetails` for every row and
+cannot answer "which model is best".
+
+"Fastest" is generation latency, with the (separate) judge call excluded. It still
+includes the client's own min-request-interval wait, so it only ranks true model
+speed when `GROQ_MIN_REQUEST_INTERVAL_MS` / `NVIDIA_MIN_REQUEST_INTERVAL_MS` are 0.
+
 ## Setup
 
 ```bash
@@ -186,7 +236,11 @@ end to an interface that already had to exist.
 
 - **Models to compare** — edit `src/models.js`. Each entry is
   `{ id, provider }`, where `provider` is `"groq"`, `"nvidia"` or `"ollama"`. A
-  bare string still works and defaults to Groq. The lists the datasets actually
+  bare string still works and defaults to Groq. An entry may also carry
+  per-model generation parameters that are forwarded only for that model, e.g.
+  `{ id: "nvidia/nemotron-3.5-super-vl-120b-a12b", provider: "nvidia", reasoning_effort: "max" }`.
+  They must be names the provider's client accepts; unsupported ones are
+  reported once per run and dropped. The lists the datasets actually
   run are `CHAT_MODELS` (text) and `VISION_MODELS_ALL` (both image datasets),
   which put `LOCAL_MODELS` first and the hosted entries after, so a local
   profile runs the Ollama models and a hosted profile runs the paid ones.
@@ -380,6 +434,7 @@ and attach `responseFormat: toResponseFormat(yourSchema)`.
 | `yarn eval --dataset image` | Same as `yarn eval:image` |
 | `yarn test` | Unit tests — no API keys, no provider calls |
 | `yarn verify:langfuse` | End-to-end assertions against a mock Langfuse |
+| `yarn langfuse:report` | Per-model score/latency/token table read back from Langfuse |
 | `yarn check` | `yarn test` + `yarn verify:langfuse` |
 
 A bare positional argument works too, so `yarn eval image` is the same as
