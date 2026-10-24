@@ -1,9 +1,11 @@
 // This module must be imported *before* anything else that creates spans
 // (i.e. before the provider clients / judge run inside a trace). Importing it
-// registers the Langfuse OpenTelemetry span processor with the Node SDK.
+// registers the Langfuse OpenTelemetry span processor(s) with the Node SDK.
 import "dotenv/config";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
+
+import { config, resolveLangfuseProjects } from "./config.js";
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -19,18 +21,26 @@ function requireEnv(name) {
 // their scores in ONE environment.
 process.env.LANGFUSE_TRACING_ENVIRONMENT ??= process.env.NODE_ENV || "development";
 
-export const langfuseSpanProcessor = new LangfuseSpanProcessor({
-  publicKey: requireEnv("LANGFUSE_PUBLIC_KEY"),
-  secretKey: requireEnv("LANGFUSE_SECRET_KEY"),
-  baseUrl: process.env.LANGFUSE_BASE_URL || "https://cloud.langfuse.com",
-  // Spans created by Langfuse are exported by default (plus gen_ai.*/known LLM
-  // scopes). Every span this harness creates comes from the Langfuse SDK, so
-  // the default filter keeps the whole trace tree. Set
-  // `shouldExportSpan: () => true` here to export every OTel span instead.
-});
+const langfuseProjects = resolveLangfuseProjects(config, process.env);
+
+export const langfuseSpanProcessors = langfuseProjects.map((project) =>
+  new LangfuseSpanProcessor({
+    publicKey: project.publicKey,
+    secretKey: project.secretKey,
+    baseUrl: project.baseUrl,
+    environment: project.environment,
+    release: project.release,
+  })
+);
+
+// Backwards-compatible single-processor export.
+export const langfuseSpanProcessor = langfuseSpanProcessors[0];
 
 const sdk = new NodeSDK({
-  spanProcessors: [langfuseSpanProcessor],
+  spanProcessors: langfuseSpanProcessors,
 });
 
 sdk.start();
+
+// Keep a reference so runEval can flush every processor.
+export { sdk };

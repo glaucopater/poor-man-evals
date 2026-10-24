@@ -42,7 +42,7 @@ NVIDIA_MIN_REQUEST_INTERVAL_MS / GROQ_MIN_REQUEST_INTERVAL_MS are 0.
 
 /** Parses the flag set above. Deliberately tiny -- no dependency, no surprises. */
 function parseArgs(argv) {
-  const opts = { sessions: [], last: 5, all: false, since: 30, dataset: null, environment: null, json: false };
+  const opts = { sessions: [], last: 5, all: false, since: 30, dataset: null, environment: null, project: "default", json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => {
@@ -63,6 +63,7 @@ function parseArgs(argv) {
     else if (arg === "--dataset") opts.dataset = next(), i++;
     else if (arg === "--environment") opts.environment = next(), i++;
     else if (arg === "--json") opts.json = true;
+    else if (arg === "--project") opts.project = next(), i++;
     else {
       console.error(`Unknown option "${arg}".\n\n${HELP}`);
       process.exit(1);
@@ -75,15 +76,21 @@ function parseArgs(argv) {
 
 const opts = parseArgs(process.argv.slice(2));
 
-if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) {
-  console.error("LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY are not set. Add them to .env.");
+const __project = opts.project || "default";
+const __upper = __project.toLowerCase() === "default" ? "" : __project.toUpperCase().replace(/[^A-Z0-9]+/g, "_") + "_";
+const __publicKeyEnv = __project.toLowerCase() === "default" ? "LANGFUSE_PUBLIC_KEY" : "LANGFUSE_" + __upper + "PUBLIC_KEY";
+const __secretKeyEnv = __project.toLowerCase() === "default" ? "LANGFUSE_SECRET_KEY" : "LANGFUSE_" + __upper + "SECRET_KEY";
+const __baseUrlEnv = __project.toLowerCase() === "default" ? "LANGFUSE_BASE_URL" : "LANGFUSE_" + __upper + "BASE_URL";
+
+if (!process.env[__publicKeyEnv] || !process.env[__secretKeyEnv]) {
+  console.error(__publicKeyEnv + " / " + __secretKeyEnv + " are not set. Add them to .env.");
   process.exit(1);
 }
 
 const client = new LangfuseClient({
-  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
-  secretKey: process.env.LANGFUSE_SECRET_KEY,
-  baseUrl: process.env.LANGFUSE_BASE_URL,
+  publicKey: process.env[__publicKeyEnv],
+  secretKey: process.env[__secretKeyEnv],
+  baseUrl: process.env[__baseUrlEnv] || process.env.LANGFUSE_BASE_URL,
 });
 
 /** Every observation run through this harness is named `eval:<model>:<item>`. */

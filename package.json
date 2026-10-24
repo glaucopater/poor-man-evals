@@ -9,6 +9,7 @@
     "eval:text": "node src/runEval.js text",
     "eval:image": "node src/runEval.js image",
     "eval:complex": "node src/runEval.js complex-image",
+    "eval:freeprompt": "node src/runEval.js freeprompt",
     "eval:dry": "node scripts/eval-dry.mjs",
     "test": "node --test test/*.test.mjs",
     "verify:langfuse": "node scripts/verify-langfuse.mjs",

@@ -8,6 +8,7 @@
 // OpenAI-compatible providers.
 import { callGroq, listGroqModelIds } from "./groq.js";
 import { callNvidia, listNvidiaModelIds } from "./nvidia.js";
+import { callGemini, listGeminiModelIds } from "./gemini.js";
 import {
   callOllama,
   listOllamaModelIds,
@@ -34,6 +35,7 @@ const ollama = () => {
 export const PROVIDERS = {
   groq: { label: "Groq", tag: "groq", call: callGroq, listModelIds: listGroqModelIds },
   nvidia: { label: "NVIDIA NIM", tag: "nvidia", call: callNvidia, listModelIds: listNvidiaModelIds },
+  gemini: { label: "Google Gemini", tag: "gemini", call: callGemini, listModelIds: listGeminiModelIds },
   ollama: {
     ...ollama(),
     call: callOllama,
@@ -87,6 +89,14 @@ const SUPPORTED_PARAMS = {
     "top_p",
     "response_format",
     "reasoning_effort",
+  ],
+  gemini: [
+    "model",
+    "messages",
+    "temperature",
+    "max_completion_tokens",
+    "top_p",
+    "response_format",
   ],
   ollama: [
     "model",

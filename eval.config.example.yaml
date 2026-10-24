@@ -64,6 +64,11 @@ providers:
     min_request_interval_ms: 2200
     max_retries: 5
 
+  gemini:
+    # Google Generative Language API. Key comes from GEMINI_API_KEY in .env.
+    min_request_interval_ms: 0
+    max_retries: 3
+
   ollama:
     # A local server has no API key and no rate limit, hence interval 0.
     # Retries still exist because a cold model load can drop a connection.
@@ -72,6 +77,7 @@ providers:
     max_retries: 2
 
 langfuse:
+  projects: [default]
   # Cloud: https://cloud.langfuse.com (US), https://us.cloud.langfuse.com,
   # https://jp.cloud.langfuse.com, https://hipaa.cloud.langfuse.com
   # Or your self-hosted URL.

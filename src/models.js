@@ -51,6 +51,14 @@ export const VISION_MODELS = [
   { id: "meta/llama-3.2-11b-vision-instruct", provider: "nvidia" },
 ];
 
+// Gemini models used by the freeprompt app (provider: "gemini"). These run
+// through Google's Generative Language API, so GEMINI_API_KEY must be set.
+export const GEMINI_MODELS = [
+  { id: "gemini-3.1-flash-lite", provider: "gemini" },
+  { id: "gemini-3.5-flash", provider: "gemini" },
+  { id: "gemini-2.5-flash", provider: "gemini" },
+  { id: "gemini-2.5-flash-lite", provider: "gemini" },
+];
 // Locally installed Ollama models (provider: "ollama"). No API key, no rate
 // limit, no cost -- which is what makes them useful as a baseline to compare
 // the hosted models against.

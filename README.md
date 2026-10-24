@@ -75,6 +75,31 @@ Behaviours the harness relies on:
 
 Run `yarn verify:langfuse` to check all of the above against a local mock endpoint (no provider calls, no writes to your project). Run `yarn eval:dry` to exercise a real eval against the same mock, so nothing reaches your project.
 
+### Multiple Langfuse projects
+
+A run can be shipped to more than one Langfuse project at once -- useful for
+keeping a personal project and a shared one in sync. List the project names under
+`langfuse.projects` in `eval.config.yaml`:
+
+```yaml
+langfuse:
+  base_url: https://cloud.langfuse.com
+  environment: development
+  projects: [default, freeprompt]
+```
+
+Names map to environment variables by convention:
+
+| project name | public key env | secret key env |
+|---|---|---|
+| `default` | `LANGFUSE_PUBLIC_KEY` | `LANGFUSE_SECRET_KEY` |
+| `freeprompt` | `LANGFUSE_FREEPROMPT_PUBLIC_KEY` | `LANGFUSE_FREEPROMPT_SECRET_KEY` |
+| `<name>` | `LANGFUSE_<NAME>_PUBLIC_KEY` | `LANGFUSE_<NAME>_SECRET_KEY` |
+
+Every span, score and media upload is then written to *each* project. Base URL,
+environment and release are shared unless a per-project `LANGFUSE_<NAME>_BASE_URL`
+is set. With no `projects` key the harness behaves exactly as before and writes
+to the single `default` project.
 ### Reading results back
 
 Every run prints its per-model averages, tokens and truncation at the end. To
